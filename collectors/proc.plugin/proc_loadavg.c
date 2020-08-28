@@ -107,8 +107,9 @@ int do_proc_loadavg(int update_every, usec_t dt) {
 
     if(likely(do_all_processes)) {
         static RRDSET *processes_chart = NULL;
-        static RRDDIM *rd_active = NULL, *rd_pidmax;
-        
+        static RRDDIM *rd_active = NULL;
+        static RRDSETVAR *rd_pidmax;
+        //VARIABLE [CHART] pidmax = max_processes;
 
         if(unlikely(!processes_chart)) {
             processes_chart = rrdset_create_localhost(
@@ -127,13 +128,15 @@ int do_proc_loadavg(int update_every, usec_t dt) {
             );
 
             rd_active = rrddim_add(processes_chart, "active", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
-            rd_pidmax = rrddim_add(processes_chart, "pidmax", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_pidmax = rrdsetvar_custom_chart_variable_create(processes_chart, "pidmax");
+            //rd_pidmax = rrddim_add(processes_chart, "pidmax", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
         }
         else rrdset_next(processes_chart);
 
         rrddim_set_by_pointer(processes_chart, rd_active, active_processes);
-        rrddim_set_by_pointer(processes_chart, rd_pidmax,    max_processes);
-        rrddim_hide(processes_chart, "pidmax");
+        rrdsetvar_custom_chart_variable_set(rd_pidmax, max_processes);
+        //rrddim_set_by_pointer(processes_chart, rd_pidmax,    max_processes);
+        //rrddim_hide(processes_chart, "pidmax");
         rrdset_done(processes_chart);
     }
 
