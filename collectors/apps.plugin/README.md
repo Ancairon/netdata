@@ -6,6 +6,8 @@ custom_edit_url: https://github.com/netdata/netdata/edit/master/collectors/apps.
 
 # apps.plugin
 
+## Test header
+
 `apps.plugin` breaks down system resource usage to **processes**, **users** and **user groups**.
 
 To achieve this task, it iterates through the whole process tree, collecting resource usage information
