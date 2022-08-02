@@ -2,9 +2,6 @@
 title: "Collecting metrics"
 custom_edit_url: https://github.com/netdata/netdata/edit/master/collectors/README.md
 id: "collectors-ref"
-learn_topic_type: "Concepts"
-learn_rel_path: "/metrics collection/"
-learn_status: "unpublished"
 -->
 
 # Collecting metrics
