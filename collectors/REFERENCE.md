@@ -1,9 +1,9 @@
 <!--
 title: "Collectors configuration reference"
 custom_edit_url: https://github.com/netdata/netdata/edit/master/collectors/REFERENCE.md
-nature: "Collector References"
-path: "/configuration/"
-status: "published"
+learn_topic_type: "Collector References"
+learn_rel_path: "/configuration/"
+learn_status: "published"
 -->
 
 # Collectors configuration reference
