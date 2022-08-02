@@ -2,6 +2,9 @@
 title: "Change how long Netdata stores metrics"
 description: "With a single configuration change, the Netdata Agent can store days, weeks, or months of metrics at its famous per-second granularity."
 custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/store/change-metrics-storage.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/Manage metrics/"
 -->
 
 # Change how long Netdata stores metrics

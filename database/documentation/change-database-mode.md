@@ -2,6 +2,9 @@
 title: "Database"
 description: "The Netdata Agent leverages multiple, user-configurable time-series databases that use RAM and/or disk to store metrics on any type of node."
 custom_edit_url: https://github.com/netdata/netdata/edit/master/database/README.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/Manage metrics/"
 -->
 
 # Database

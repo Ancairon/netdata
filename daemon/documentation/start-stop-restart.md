@@ -2,6 +2,9 @@
 title: "Start, stop, or restart the Netdata Agent"
 description: "Manage the Netdata Agent daemon, load configuration changes, and troubleshoot stuck processes on systemd and non-systemd nodes."
 custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/configure/start-stop-restart.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/General configuration/"
 -->
 
 # Start, stop, or restart the Netdata Agent

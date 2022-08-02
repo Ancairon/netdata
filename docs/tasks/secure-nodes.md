@@ -2,6 +2,9 @@
 title: "Secure your nodes"
 description: "Your data and systems are safe with Netdata, but we recommend a few easy ways to improve the security of your infrastructure."
 custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/configure/secure-nodes.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/Security/"
 -->
 
 # Secure your nodes

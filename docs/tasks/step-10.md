@@ -1,6 +1,9 @@
 <!--
 title: "Step 10. Set up a proxy"
 custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/guides/step-by-step/step-10.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/Security/"
 -->
 
 # Step 10. Set up a proxy

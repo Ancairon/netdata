@@ -2,6 +2,9 @@
 title: "Configure health alarms"
 description: "Netdata's health monitoring watchdog is incredibly adaptable to your infrastructure's unique needs, with configurable health alarms."
 custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/monitor/configure-alarms.md
+learn_status: "published"
+learn_topic_type: "Tasks"
+learn_rel_path: "/Alerting/"
 -->
 
 # Configure health alarms
