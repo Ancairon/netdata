@@ -1,1 +1,1 @@
-integrations/linux_sensors_(sysfs).md
+integrations/linux_sensors_sysfs.md

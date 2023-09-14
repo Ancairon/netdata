@@ -1,1 +1,1 @@
-integrations/isc_bind_(rndc).md
+integrations/isc_bind_rndc.md

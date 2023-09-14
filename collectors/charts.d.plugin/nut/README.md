@@ -1,1 +1,1 @@
-integrations/network_ups_tools_(nut).md
+integrations/network_ups_tools_nut.md

@@ -1,5 +1,5 @@
 <!--startmeta
-custom_edit_url: "https://github.com/netdata/netdata/edit/master/collectors/proc.plugin/integrations/memory_modules_(dimms).md"
+custom_edit_url: "https://github.com/netdata/netdata/edit/master/collectors/proc.plugin/integrations/memory_modules_dimms.md"
 meta_yaml: "https://github.com/netdata/netdata/edit/master/collectors/proc.plugin/metadata.yaml"
 sidebar_label: "Memory modules (DIMMs)"
 learn_status: "Published"

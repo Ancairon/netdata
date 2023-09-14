@@ -1,1 +1,1 @@
-integrations/go_applications_(expvar).md
+integrations/go_applications_expvar.md
