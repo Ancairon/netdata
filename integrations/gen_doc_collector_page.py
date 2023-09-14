@@ -62,7 +62,7 @@ for category_id in sorted_dict:
     names=[]
     for integration in sorted_dict[category_id]:
         name = integration['meta']['monitored_instance']['name']
-        link = integration['edit_link'].replace("metadata.yaml", "") + "integrations/" + name.lower().replace(" ", "_").replace("/", "-")+".md"
+        link = integration['edit_link'].replace("metadata.yaml", "") + "integrations/" + name.lower().replace(" ", "_").replace("/", "-").replace("(", "").replace(")", "")+".md"
         names.append(f"[{name}]({link})")
     for integration_name in sorted(names):
         md+= "- " + integration_name + "\n\n"
