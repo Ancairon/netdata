@@ -19,6 +19,157 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+
+
+type Metadata struct {
+	Device DeviceMetadata `yaml:"device"`
+}
+
+type DeviceMetadata struct {
+	Fields map[string]Symbol `yaml:"fields"`
+}
+
+type Metric struct {
+	//this is a superset of the other 3 sub types of metrics
+	Name    string `yaml:"Name"`
+	OID     string `yaml:"OID"`
+	Tags    []MetricTag  `yaml:"metric_tags,omitempty"`
+	Type    string `yaml:"metric_type,omitempty"`
+	Options map[string]string
+	MIB     string   `yaml:"MIB"`
+	Symbol  *Symbol  `yaml:"symbol,omitempty"`
+	Table   *Symbol   `yaml:"table,omitempty"`
+	Symbols []Symbol `yaml:"symbols,omitempty"`
+}
+
+// MetricDefinition represents a metric with a type and a value.
+type MetricDefinition struct {
+	Type  string  `json:"type"`
+	Value float64 `json:"value"`
+}
+
+type Symbol struct {
+	OID          string `yaml:"OID"`
+	Name         string `yaml:"name"`
+	MatchPattern string `yaml:"match_pattern,omitempty"`
+	MatchValue   string `yaml:"match_value,omitempty"`
+	ExtractValue string `yaml:"extract_value,omitempty"`
+}
+
+type ParsedMetric struct {
+	Name                string
+	Tags                []MetricTag
+	Type                string
+	EnforceScalar       bool
+	Options             map[string]string
+	ExtractValuePattern *regexp.Regexp
+	// Table specific
+	IndexTags  []IndexTag
+	ColumnTags []ColumnTag
+}
+
+type IndexTag struct {
+	ParsedMetricTag ParsedMetricTag
+	Index           int
+}
+
+type ColumnTag struct {
+	DEDUPParsedMetricTag ParsedMetricTag
+	Column          string
+	IndexSlices     []IndexSlice
+}
+
+type MetricTag struct {
+	Tag string `yaml:"tag"`
+	// index specific
+	Index int
+	Mapping map[int]string
+	// column specific
+	MIB string
+	Column Symbol
+	Table string
+	IndexTransform []IndexSlice
+
+
+	Symbol string `yaml:"symbol"`
+	OID string
+	Match string
+	Tags map[string]string
+}
+
+
+// type Tag struct {
+// 	Tag    string 
+// 	Symbol Symbol 
+// }
+type ParsedTableMetric struct {
+	Name string
+	IndexTags []IndexTag
+	ColumnTags []ColumnTag
+	Type string
+	Options map[string]string
+	ExtractValuePattern *regexp.Regexp
+}
+type ParsedTableMetricTag struct {
+	OIDsToResolve map[string]string
+	TableBatches  TableBatches
+	ColumnTags    []ColumnTag
+	// index specific
+	IndexTags     []IndexTag
+	IndexMappings map[int]map[string]string
+}
+
+type ParsedMetricTag struct {
+	Name string
+	// Match (regex) metric specific
+	Tags    map[string]string
+	Pattern *regexp.Regexp
+}
+
+type IndexMapping struct {
+	Tag     string
+	Index   int
+	Mapping map[string]string
+}
+
+type TableBatchKey struct {
+	MIB   string
+	Table string
+}
+
+type TableBatch struct {
+	TableOID string
+	OIDs     []string
+}
+
+type TableBatches map[TableBatchKey]TableBatch
+
+type MetricParseResult struct {
+	OIDsToFetch   []string
+	OIDsToResolve map[string]string
+	ParsedMetrics []ParsedMetric
+	TableBatches  TableBatches
+	IndexMappings []IndexMapping
+}
+
+type ParsedSymbol struct {
+	Name                string
+	OID                 string
+	ExtractValuePattern *regexp.Regexp
+	OIDsToResolve       map[string]string
+}
+
+// Profile represents the structure of a Datadog SNMP profile.
+type Profile struct {
+	Extends     []string     `yaml:"extends"`
+	SysObjectID SysObjectIDs `yaml:"sysobjectid"`
+	Metadata    Metadata     `yaml:"metadata"`
+	Metrics     []Metric     `yaml:"metrics"`
+}
+
+// SysObjectIDs allows both a string and list of strings for sysobjectid.
+type SysObjectIDs []string
+
 func parseMetrics(metrics []Metric) {
 	for _, metric := range metrics {
 		// fmt.Print(metric)
@@ -147,18 +298,18 @@ func parseTableMetric(metric Metric) MetricParseResult {
 	oids_to_resolve := parsed_table.OIDsToResolve
 
 	var index_tags []string
-	var column_tags []string
+	var column_tags []ColumnTag
 	var index_mappings []string
 	var table_batches map[TableBatchKey]TableBatches
 
 	if metric.Tags != nil {
-		for metric_tag := range metric.Tags {
+		for _, metric_tag := range metric.Tags {
 			parsed_table_metric_tag := parseTableMetricTag(mib, parsed_table, metric_tag)
 			
-			if parsed_table_metric_tag != nil {
+			if reflect.DeepEqual(parsed_table_metric_tag, ParsedTableMetricTag{}) {
 				oids_to_resolve = mergeMaps(oids_to_resolve, parsed_table_metric_tag.OIDsToResolve)
 
-				column_tags = append(column_tags, parsed_table_metric_tag.ColumnTags)
+				column_tags = append(column_tags, parsed_table_metric_tag.ColumnTags...)
 
 				table_batches = mergeTableBatches(table_batches,parsed_table_metric_tag.TableBatches)
 			} else{
@@ -248,14 +399,7 @@ func mergeTableBatches(target TableBatches, source TableBatches) TableBatches {
 	return merged
 }
 
-type ParsedTableMetric struct {
-	Name string
-	IndexTags []IndexTag
-	ColumnTags []ColumnTag
-	Type string
-	Options map[string]string
-	ExtractValuePattern *regexp.Regexp
-}
+
 // Parse an item of the `metric_tags` section of a table metric.
 
 // Items can be:
@@ -434,15 +578,6 @@ type IndexSlice struct {
 	End int
 }
 
-type MetricTag struct {
-	Symbol string
-	MIB string 
-	OID string
-	Tag    string 
-	Match string
-	// Tags []string
-	Tags map[string]string
-}
 
 
 func parseMetricTag(metric_tag MetricTag) ParsedMetricTag{
@@ -538,82 +673,6 @@ func parseSymbolMetric(metric Metric) MetricParseResult {
 	}
 }
 
-type ParsedMetric struct {
-	Name                string
-	Tags                []Tag
-	Type                string
-	EnforceScalar       bool
-	Options             map[string]string
-	ExtractValuePattern *regexp.Regexp
-	// Table specific
-	IndexTags  []IndexTag
-	ColumnTags []ColumnTag
-}
-
-type IndexTag struct {
-	ParsedMetricTag ParsedMetricTag
-	Index           int
-}
-
-type ColumnTag struct {
-	DEDUPParsedMetricTag ParsedMetricTag
-	Column          string
-	IndexSlices     []IndexSlice
-}
-
-type TableMetricTag struct {
-	Tag string
-	// index specific
-	Index int
-	Mapping map[int]string
-	// column specific
-	MIB string
-	Column Symbol
-	Table string
-	IndexTransform []IndexSlice
-}
-
-type ParsedTableMetricTag struct {
-	OIDsToResolve map[string]string
-	TableBatches  TableBatches
-	ColumnTags    []ColumnTag
-	// index specific
-	IndexTags     []IndexTag
-	IndexMappings map[int]map[string]string
-}
-
-type ParsedMetricTag struct {
-	Name string
-	// Match (regex) metric specific
-	Tags    map[string]string
-	Pattern *regexp.Regexp
-}
-
-type IndexMapping struct {
-	Tag     string
-	Index   int
-	Mapping map[string]string
-}
-
-type TableBatchKey struct {
-	MIB   string
-	Table string
-}
-
-type TableBatch struct {
-	TableOID string
-	OIDs     []string
-}
-
-type TableBatches map[TableBatchKey]TableBatch
-
-type MetricParseResult struct {
-	OIDsToFetch   []string
-	OIDsToResolve map[string]string
-	ParsedMetrics []ParsedMetric
-	TableBatches  TableBatches
-	IndexMappings []IndexMapping
-}
 
 func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 	// Parse an OID symbol.
@@ -632,19 +691,19 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 	//     name: ifNumber
 	// ```
 
-	if reflect.TypeOf(symbol) == string {
-		// TODO, here they use ObjectIdentity(mib,symbol) to resolve the symbol. this is not straightfowrard in Go, it is a pysnmp function.
-		// oid:= 
+	// if reflect.TypeOf(symbol) == reflect.TypeOf(string) {
+	// 	// TODO, here they use ObjectIdentity(mib,symbol) to resolve the symbol. this is not straightfowrard in Go, it is a pysnmp function.
+	// 	// oid:= 
 
-		// return ParsedSymbol
-	}
+	// 	// return ParsedSymbol
 	// }
+	
 	switch s := symbol.(type) {
 	case Symbol:
-		oid := symbol.OID
-		name := symbol.Name
-		if symbol.ExtractValue != "" {
-			extractValuePattern, err := regexp.Compile(symbol.ExtractValue)
+		oid := s.OID
+		name := s.Name
+		if s.ExtractValue != "" {
+			extractValuePattern, err := regexp.Compile(s.ExtractValue)
 			if err != nil {
 
 				return ParsedSymbol{}
@@ -658,35 +717,12 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 			}
 		}
 	case string:
-
-	return ParsedSymbol{
-		name,
-		oid,
-		nil,
-		map[string]string{name: oid},
+		return ParsedSymbol{}
 	}
-
+	return ParsedSymbol{}
 }
 
-type ParsedSymbol struct {
-	Name                string
-	OID                 string
-	ExtractValuePattern *regexp.Regexp
-	OIDsToResolve       map[string]string
-}
-
-// Profile represents the structure of a Datadog SNMP profile.
-type Profile struct {
-	Extends     []string     `yaml:"extends"`
-	SysObjectID SysObjectIDs `yaml:"sysobjectid"`
-	Metadata    Metadata     `yaml:"metadata"`
-	Metrics     []Metric     `yaml:"metrics"`
-}
-
-// SysObjectIDs allows both a string and list of strings for sysobjectid.
-type SysObjectIDs []string
-
-func (s *SysObjectIDs) UnmarshalYAML(unmarshal (func(interface{}) error)) error {
+func (s *SysObjectIDs) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var single string
 	if err := unmarshal(&single); err == nil {
 		*s = []string{single}
@@ -700,27 +736,6 @@ func (s *SysObjectIDs) UnmarshalYAML(unmarshal (func(interface{}) error)) error 
 	}
 
 	return fmt.Errorf("invalid sysobjectid format")
-}
-
-type Metadata struct {
-	Device DeviceMetadata `yaml:"device"`
-}
-
-type DeviceMetadata struct {
-	Fields map[string]Symbol `yaml:"fields"`
-}
-
-type Metric struct {
-	//this is a superset of the other 3 sub types of metrics
-	Name    string `yaml:"Name"`
-	OID     string `yaml:"OID"`
-	Tags    []Tag  `yaml:"metric_tags,omitempty"`
-	Type    string `yaml:"metric_type,omitempty"`
-	Options map[string]string
-	MIB     string   `yaml:"MIB"`
-	Symbol  *Symbol  `yaml:"symbol,omitempty"`
-	Table   *Symbol   `yaml:"table,omitempty"`
-	Symbols []Symbol `yaml:"symbols,omitempty"`
 }
 
 // UnmarshalYAML custom unmarshaller for Symbol to handle both string and object cases.
@@ -744,29 +759,12 @@ func (s *Symbol) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// MetricDefinition represents a metric with a type and a value.
-type MetricDefinition struct {
-	Type  string  `json:"type"`
-	Value float64 `json:"value"`
-}
-
-type Symbol struct {
-	OID          string `yaml:"OID"`
-	Name         string `yaml:"name"`
-	MatchPattern string `yaml:"match_pattern,omitempty"`
-	MatchValue   string `yaml:"match_value,omitempty"`
-	ExtractValue string `yaml:"extract_value,omitempty"`
-}
-
 // type Table struct {
 // 	OID  string `yaml:"OID"`
 // 	Name string `yaml:"name"`
 // }
 
-type Tag struct {
-	Tag    string `yaml:"tag"`
-	Symbol Symbol `yaml:"symbol"`
-}
+
 
 
 // Load all profiles from the directory
