@@ -19,27 +19,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-
-
 type Metadata struct {
 	Device DeviceMetadata `yaml:"device"`
 }
 
 type DeviceMetadata struct {
 	Fields map[string]Symbol `yaml:"fields"`
-}
-
-type Metric struct {
-	//this is a superset of the other 3 sub types of metrics
-	Name    string `yaml:"Name"`
-	OID     string `yaml:"OID"`
-	Tags    []MetricTag  `yaml:"metric_tags,omitempty"`
-	Type    string `yaml:"metric_type,omitempty"`
-	Options map[string]string
-	MIB     string   `yaml:"MIB"`
-	Symbol  *Symbol  `yaml:"symbol,omitempty"`
-	Table   *Symbol   `yaml:"table,omitempty"`
-	Symbols []Symbol `yaml:"symbols,omitempty"`
 }
 
 // MetricDefinition represents a metric with a type and a value.
@@ -51,86 +36,85 @@ type MetricDefinition struct {
 type Symbol struct {
 	OID          string `yaml:"OID"`
 	Name         string `yaml:"name"`
-	MatchPattern string `yaml:"match_pattern,omitempty"`
-	MatchValue   string `yaml:"match_value,omitempty"`
+	// MatchPattern string `yaml:"match_pattern,omitempty"`
+	// MatchValue   string `yaml:"match_value,omitempty"`
 	ExtractValue string `yaml:"extract_value,omitempty"`
 }
 
-type ParsedMetric struct {
-	Name                string
-	Tags                []MetricTag
-	Type                string
-	EnforceScalar       bool
-	Options             map[string]string
-	ExtractValuePattern *regexp.Regexp
-	// Table specific
-	IndexTags  []IndexTag
-	ColumnTags []ColumnTag
-}
-
-type IndexTag struct {
-	ParsedMetricTag ParsedMetricTag
-	Index           int
-}
-
-type ColumnTag struct {
-	DEDUPParsedMetricTag ParsedMetricTag
-	Column          string
-	IndexSlices     []IndexSlice
-}
-
-type MetricTag struct {
-	Tag string `yaml:"tag"`
-	// index specific
+type IndexTableMetricTag struct {
 	Index int
 	Mapping map[int]string
-	// column specific
+	Tag string
+}
+
+type ColumnTableMetricTag struct {
+	MIB string
+	Column Symbol
+	Table string
+	Tag string
+	IndexTransform []IndexSlice
+}
+
+// In python this is used as a union of the above types, here we will implement it and then check the type with reflect
+type TableMetricTag struct {
+	Index int
+	Mapping map[int]string
+
+	Tag string
+
 	MIB string
 	Column Symbol
 	Table string
 	IndexTransform []IndexSlice
-
-
-	Symbol string `yaml:"symbol"`
-	OID string
-	Match string
-	Tags map[string]string
 }
 
+type OIDMetric struct {
+	Name    string `yaml:"Name"`
+	OID     string `yaml:"OID"`
+	MetricTags    []string  `yaml:"metric_tags,omitempty"`
+	ForcedType    string `yaml:"metric_type,omitempty"`
+	Options map[string]string	
+}
 
-// type Tag struct {
-// 	Tag    string 
-// 	Symbol Symbol 
-// }
-type ParsedTableMetric struct {
-	Name string
-	IndexTags []IndexTag
-	ColumnTags []ColumnTag
-	Type string
+type SymbolMetric struct {
+	MIB     string   `yaml:"MIB"`
+	Symbol  interface{}  `yaml:"symbol,omitempty"` //can be either string or Symbol
+	ForcedType    string `yaml:"metric_type,omitempty"`
+	MetricTags []string
 	Options map[string]string
-	ExtractValuePattern *regexp.Regexp
-}
-type ParsedTableMetricTag struct {
-	OIDsToResolve map[string]string
-	TableBatches  TableBatches
-	ColumnTags    []ColumnTag
-	// index specific
-	IndexTags     []IndexTag
-	IndexMappings map[int]map[string]string
 }
 
-type ParsedMetricTag struct {
-	Name string
-	// Match (regex) metric specific
-	Tags    map[string]string
-	Pattern *regexp.Regexp
+type TableMetric struct {
+	MIB string
+	Table interface{} // can be either a string or Symbol
+	Symbols []Symbol
+	ForcedType string
+	MetricTags []TableMetricTag
+	Options map[string]string
 }
+
+// superset of OIDMetric, SymbolMetric and TableMetric
+type Metric struct {
+	Name    string `yaml:"Name"`
+	OID     string `yaml:"OID"`
+	MetricTags    []interface{}  `yaml:"metric_tags,omitempty"`
+	ForcedType    string `yaml:"metric_type,omitempty"`
+	Options map[string]string	
+
+	MIB     string   `yaml:"MIB"`
+	Symbol  interface{}  `yaml:"symbol,omitempty"` //can be either string or Symbol
+	
+	Table interface{} // can be either a string or Symbol
+	Symbols []Symbol
+}
+
 
 type IndexMapping struct {
 	Tag     string
 	Index   int
-	Mapping map[string]string
+	Mapping map[int]string
 }
+
 
 type TableBatchKey struct {
 	MIB   string
@@ -144,19 +128,114 @@ type TableBatch struct {
 
 type TableBatches map[TableBatchKey]TableBatch
 
-type MetricParseResult struct {
-	OIDsToFetch   []string
-	OIDsToResolve map[string]string
-	ParsedMetrics []ParsedMetric
-	TableBatches  TableBatches
-	IndexMappings []IndexMapping
-}
 
 type ParsedSymbol struct {
 	Name                string
 	OID                 string
 	ExtractValuePattern *regexp.Regexp
 	OIDsToResolve       map[string]string
+}
+
+type IndexTag struct {
+	ParsedMetricTag ParsedMetricTag
+	Index           int
+}
+
+type ColumnTag struct {
+	DEDUPParsedMetricTag ParsedMetricTag
+	Column          string
+	IndexSlices     []IndexSlice
+}
+
+type ParsedColumnMetricTag struct {
+	OIDsToResolve map[string]string
+	TableBatches  TableBatches
+	ColumnTags    []ColumnTag
+}
+type ParsedIndexMetricTag struct {
+	IndexTags     []IndexTag
+	IndexMappings map[int]map[string]string
+}
+
+type ParsedTableMetricTag struct{
+	OIDsToResolve map[string]string
+	TableBatches  TableBatches
+	ColumnTags    []ColumnTag
+	IndexTags     []IndexTag
+	IndexMappings map[int]map[int]string
+}
+
+type ParsedSymbolMetric struct {
+	Name string
+	Tags []string
+	ForcedType string
+	EnforceScalar bool
+	Options map[string]string
+	ExtractValuePattern *regexp.Regexp
+}
+
+type ParsedTableMetric struct {
+	Name string
+	IndexTags []IndexTag
+	ColumnTags []ColumnTag
+	ForcedType string
+	Options map[string]string
+	ExtractValuePattern *regexp.Regexp
+}
+
+//union of two above
+type ParsedMetric interface{}
+
+type ParsedSimpleMetricTag struct {
+	Name string
+}
+
+type ParsedMatchMetricTag struct {
+	tags []string
+	symbol Symbol
+	pattern *regexp.Regexp
+}
+
+type ParsedMetricTag struct{
+	Name string
+
+	tags []string
+	symbol Symbol
+	pattern *regexp.Regexp
+}
+
+type SymbolTag struct {
+	parsedMetricTag ParsedMetricTag
+	symbol string
+}
+
+type ParsedSymbolTagsResult struct {
+	oids []string
+	parsedSymbolTags []SymbolTag
+}
+
+type MetricParseResult struct{
+	oidsToFetch []string
+	oidsToResolve map[string]string
+	indexMappings []IndexMapping
+	tableBatches TableBatches
+	parsedMetrics []ParsedMetric
+}
+
+type MetricTag struct {
+	OID string
+	MIB string
+	Symbol string `yaml:"symbol"`
+	// simple tag
+	Tag string `yaml:"tag"`
+	// regex matching
+	Match string
+	Tags []string
+}
+
+type IndexSlice struct {
+	Start int
+	End int
 }
 
 // Profile represents the structure of a Datadog SNMP profile.
@@ -220,13 +299,25 @@ func parseMetric(metric Metric) string {
 	//       - OID: 1.3.6.1.2.1.2.2.1.14
 	//         name: ifInErrors
 	// ```
+	castedStringMetricTags := []string{}
+	castedMetricTags := []TableMetricTag{}
+	switch metric.MetricTags[0].(type) {
+	case string:
+		castedStringMetricTags = sliceToStrings(metric.MetricTags)
+
+		
+	case MetricTag:
+		castedMetricTags = sliceToTableMetricTags(metric.MetricTags)
+
+	}
+
 	if len(metric.OID) > 0 {
-		fmt.Println(parseOIDMetric(metric))
-		return "oid metric parsed"
+		fmt.Println(parseOIDMetric(OIDMetric{Name: metric.Name,OID: metric.OID,MetricTags: castedStringMetricTags,ForcedType: metric.ForcedType,Options: metric.Options}))
+				return "oid metric parsed"
 	} else if len(metric.MIB) == 0 {
 		fmt.Errorf("Unsupported metric {%v}", metric)
 	} else if metric.Symbol != nil {
-		fmt.Println(parseSymbolMetric(metric))
+		fmt.Println(parseSymbolMetric(SymbolMetric{MIB: metric.MIB,Symbol: metric.Symbol,ForcedType: metric.ForcedType, MetricTags: castedStringMetricTags, Options: metric.Options}))
 		return "symbol metric parsed"
 
 		//TODO, left here
@@ -238,7 +329,7 @@ func parseMetric(metric Metric) string {
 			fmt.Errorf("When specifying a table, you must specify a list of symbols %s", metric)
 		}
 
-		fmt.Println(parseTableMetric(metric))
+		fmt.Println(parseTableMetric(TableMetric{MIB: metric.MIB, Table: metric.Table, Symbols: metric.Symbols, ForcedType: metric.ForcedType,MetricTags: castedMetricTags,Options: metric.Options}))
 
 
 		// return parseTableMetric(metric)
@@ -247,8 +338,10 @@ func parseMetric(metric Metric) string {
 	return ""
 
 }
+
 // TODO error outs on functions
-func parseOIDMetric(metric Metric) MetricParseResult {
+//done translating
+func parseOIDMetric(metric OIDMetric) MetricParseResult {
 	// Parse a fully resolved OID/name metric.
 
 	//     Note: This `OID/name` syntax is deprecated in favour of `symbol` syntax.
@@ -264,67 +357,105 @@ func parseOIDMetric(metric Metric) MetricParseResult {
 	name := metric.Name
 	oid := metric.OID
 
-	parsed_symbol_metric := ParsedMetric{
+	parsed_symbol_metric := ParsedSymbolMetric{
 		Name:                name,
-		Tags:                metric.Tags,
-		Type:                metric.Type,
+		Tags:                metric.MetricTags,
+		ForcedType:                metric.ForcedType,
 		EnforceScalar:       true,
 		Options:             metric.Options,
-		ExtractValuePattern: nil,
-		IndexTags:           nil,
-		ColumnTags:          nil,
 	}
 
 	return MetricParseResult{
-		OIDsToFetch:[]string{oid},
-		OIDsToResolve:map[string]string{name:oid},
-		ParsedMetrics:[]ParsedMetric{parsed_symbol_metric},
-		TableBatches: nil,
-		IndexMappings: nil,
+		oidsToFetch:[]string{oid},
+		oidsToResolve:map[string]string{name:oid},
+		parsedMetrics:[]ParsedMetric{parsed_symbol_metric},
+		tableBatches: nil,
+		indexMappings: nil,
 	}
-	// return ParsedSymbol {
-	// 	name,
-	// 	oid,
-	// 	nil,
-	// 	map[string]string{name:oid},
-	// }
-
 }
 
-func parseTableMetric(metric Metric) MetricParseResult {
+// TODO error outs on functions
+//done translating
+func parseSymbolMetric(metric SymbolMetric) MetricParseResult {
+	//     Parse a symbol metric (= an OID in a MIB).
+	//     Example:
+
+	//     ```
+	//     metrics:
+	//       - MIB: IF-MIB
+	//         symbol: <string or OID/name object>
+	//       - MIB: IF-MIB
+	//         symbol:                     # MIB-less syntax
+	//           OID: 1.3.6.1.2.1.6.5.0
+	//           name: tcpActiveOpens
+	//       - MIB: IF-MIB
+	//         symbol: tcpActiveOpens      # require MIB syntax
+	//     ```
+	mib := metric.MIB
+	symbol := metric.Symbol
+
+	parsed_symbol := parseSymbol(mib, symbol)
+
+	parsed_symbol_metric := ParsedSymbolMetric{
+		Name:                parsed_symbol.Name,
+		Tags:                metric.MetricTags,
+		ForcedType:                metric.ForcedType,
+		EnforceScalar:       false,
+		Options:             metric.Options,
+		ExtractValuePattern: parsed_symbol.ExtractValuePattern,
+	}
+
+	return MetricParseResult{
+		oidsToFetch:[]string{parsed_symbol.OID},
+		oidsToResolve:parsed_symbol.OIDsToResolve,
+		parsedMetrics:[]ParsedMetric{parsed_symbol_metric},
+		tableBatches: nil,
+		indexMappings: nil,
+	}
+}
+
+// TODO error outs on functions
+//done translating
+func parseTableMetric(metric TableMetric) MetricParseResult {
 	mib:= metric.MIB
 
 	parsed_table := parseSymbol(mib, metric.Table)
 	oids_to_resolve := parsed_table.OIDsToResolve
 
-	var index_tags []string
+	var index_tags []IndexTag
 	var column_tags []ColumnTag
-	var index_mappings []string
-	var table_batches map[TableBatchKey]TableBatches
+	var index_mappings []IndexMapping
+	var table_batches map[TableBatchKey]TableBatch
 
-	if metric.Tags != nil {
-		for _, metric_tag := range metric.Tags {
+	if metric.MetricTags != nil {
+		for _, metric_tag := range metric.MetricTags {
 			parsed_table_metric_tag := parseTableMetricTag(mib, parsed_table, metric_tag)
-			
-			if reflect.DeepEqual(parsed_table_metric_tag, ParsedTableMetricTag{}) {
+
+
+
+
+			if parsed_table_metric_tag.OIDsToResolve != nil {
 				oids_to_resolve = mergeMaps(oids_to_resolve, parsed_table_metric_tag.OIDsToResolve)
 
 				column_tags = append(column_tags, parsed_table_metric_tag.ColumnTags...)
 
 				table_batches = mergeTableBatches(table_batches,parsed_table_metric_tag.TableBatches)
 			} else{
-				index_tags = append(index_tags, parsed_table_metric_tag.IndexTags)
 
-				for index, mapping := range parsed_table_metric_tag.index_mappings.items(){
-					for symbol := range metric.Symbols{
+				
+
+				index_tags = append(index_tags, parsed_table_metric_tag.IndexTags...)
+
+				for index, mapping := range parsed_table_metric_tag.IndexMappings{
+					for _,symbol := range metric.Symbols{
 						index_mappings = append(index_mappings, IndexMapping{Tag:symbol.Name, Index: index, Mapping: mapping})
 					}
 
-					for tag := range metric.Tags{
-						if tag.Column != "" {
+					for _,tag := range metric.MetricTags{
+						if reflect.DeepEqual(tag.Column , Symbol{}) {
 							tag = TableMetricTag{
 								Tag: tag.Tag,
-								Column: tag.Symbol,
+								Column: tag.Column,
 							}
 							index_mappings = append(index_mappings, IndexMapping{
 								Tag: tag.Column.Name,
@@ -338,17 +469,16 @@ func parseTableMetric(metric Metric) MetricParseResult {
 		}
 	}
 
-	table_oids := []string
-	parsed_metrics := []ParsedMetric
+	table_oids := []string{}
+	parsed_metrics := []ParsedMetric{}
 
 
-	for symbol := range metric.Symbols{
-		switch s := symbol.(type) {
-		case string:
-			continue
-		// case Symbol:
+	for _, symbol := range metric.Symbols{
 		parsed_symbol := parseSymbol(mib,symbol)
-		oids_to_resolve= append(oids_to_resolve, parsed_symbol.oids_to_resolve)
+
+		for key, value := range parsed_symbol.OIDsToResolve{
+			oids_to_resolve[key]=value
+		}
 		
 		table_oids = append(table_oids, parsed_symbol.OID)
 
@@ -356,107 +486,134 @@ func parseTableMetric(metric Metric) MetricParseResult {
 			Name: parsed_symbol.Name,
 			IndexTags: index_tags,
 			ColumnTags: column_tags,
-			Type: metric.Type,
+			ForcedType: metric.ForcedType,
 			Options: metric.Options,
-			ExtractValuePattern: parsed_symbol.extractValuePattern,
+			ExtractValuePattern: parsed_symbol.ExtractValuePattern,
 		}
 
-		parsed_metrics := append(parsed_metrics,parsed_table_metric)
+		parsed_metrics = append(parsed_metrics,parsed_table_metric)
 	}
 
-	table_batches := mergeTableBatches(table_batches, map[TableBatchKey]TableBatch{TableBatchKey{MIB:mib, Table:parsed_table.Name}: TableBatch{OID: parsed_table.OID, OIDs: table_oids}})
+	table_batches = mergeTableBatches(table_batches, map[TableBatchKey]TableBatch{TableBatchKey{MIB:mib, Table:parsed_table.Name}: TableBatch{TableOID: parsed_table.OID, OIDs: table_oids}})
 
 	return MetricParseResult{
-		OIDsToFetch: []string{},
-		OIDsToResolve: oids_to_resolve,
-		TableBatches: table_batches,
-		IndexMappings: index_mappings,
-		ParsedMetrics: parsed_metrics,
+		oidsToFetch: []string{},
+		oidsToResolve: oids_to_resolve,
+		tableBatches: table_batches,
+		indexMappings: index_mappings,
+		parsedMetrics: parsed_metrics,
 	}
 
-}}
+}
+
+func sliceToStrings(items []interface{})[]string{
+	var strs []string
+		for _, v := range items {
+			s, ok := v.(string)
+			if !ok {
+				// Handle error if an element is not a string.
+				continue
+			}
+			strs = append(strs, s)
+		}
+	return strs
+}
+
+func sliceToTableMetricTags(items []interface{})[]TableMetricTag{
+	var metricTag []TableMetricTag
+		for _, v := range items {
+			s, ok := v.(TableMetricTag)
+			if !ok {
+				// Handle error if an element is not a string.
+				continue
+			}
+			metricTag = append(metricTag, s)
+		}
+	return metricTag
+}
 
 func mergeTableBatches(target TableBatches, source TableBatches) TableBatches {
 	merged := TableBatches{}
 
 	// Extend batches in `target` with OIDs from `source` that share the same key.
 	for key, batch := range target {
+		
 		if srcBatch, ok := source[key]; ok {
-			// Create a new slice with OIDs from both batches.
-			newOids := append([]OID{}, batch.Oids...)
-			newOids = append(newOids, srcBatch.Oids...)
+			mergedOids := append(batch.OIDs, srcBatch.OIDs...)
 			merged[key] = TableBatch{
-				TableOid: batch.TableOid,
-				Oids:     newOids,
+				TableOID: batch.TableOID,
+				OIDs:     mergedOids,
 			}
-		} else {
-			merged[key] = batch
+	}}
+
+	for key := range source{
+		if _, ok := target[key]; !ok {
+			merged[key] = source[key]
 		}
 	}
-
-	// Add the rest of batches in `source`.make(map[TableBatchKey]TableBatch)
 
 	return merged
 }
 
 
-// Parse an item of the `metric_tags` section of a table metric.
+/*
+Parse an item of the `metric_tags` section of a table metric.
 
-// Items can be:
+Items can be:
 
-// * A reference to a column in the same table.
+* A reference to a column in the same table.
 
-// Example using entPhySensorTable in ENTITY-SENSOR-MIB:
+Example using entPhySensorTable in ENTITY-SENSOR-MIB:
 
-// ```
-// metric_tags:
-//   - tag: sensor_type
-//     column: entPhySensorType
-//     # OR
-//     column:
-//     OID: 1.3.6.1.2.1.99.1.1.1.1
-//     name: entPhySensorType
-// ```
+```
+metric_tags:
+  - tag: sensor_type
+    column: entPhySensorType
+    # OR
+    column:
+    OID: 1.3.6.1.2.1.99.1.1.1.1
+    name: entPhySensorType
+```
 
-// * A reference to a column in a different table.
+* A reference to a column in a different table.
 
-// Example:
+Example:
 
-// ```
-// metric_tags:
-//   - tag: adapter
-//     table: genericAdaptersAttrTable
-//     column: adapterName
-//     # OR
-//     column:
-//       OID: 1.3.6.1.4.1.343.2.7.2.2.1.1.1.2
-//       name: adapterName
-// ```
+```
+metric_tags:
+  - tag: adapter
+    table: genericAdaptersAttrTable
+    column: adapterName
+    # OR
+    column:
+      OID: 1.3.6.1.4.1.343.2.7.2.2.1.1.1.2
+      name: adapterName
+```
 
-// * A reference to an OID by its index in the table entry.
+* A reference to an OID by its index in the table entry.
 
-// An optional `mapping` can be used to map index values to human-readable strings.
+An optional `mapping` can be used to map index values to human-readable strings.
 
-// Example using ipIfStatsTable in IP-MIB:
+Example using ipIfStatsTable in IP-MIB:
 
-// ```
-// metric_tags:
-//   - # ipIfStatsIPVersion (1.3.6.1.2.1.4.21.3.1.1)
-//     tag: ip_version
-//     index: 1
-//     mapping:
-//       0: unknown
-//       1: ipv4
-//       2: ipv6
-//       3: ipv4z
-//       4: ipv6z
-//       16: dns
-//   - # ipIfStatsIfIndex (1.3.6.1.2.1.4.21.3.1.2)
-//     tag: interface
-//     index: 2
-// ```
-func parseTableMetricTag(mib string, parsed_table ParsedSymbol, metric_tag TableMetricTag)ParsedTableMetricTag{
-
+```
+metric_tags:
+  - # ipIfStatsIPVersion (1.3.6.1.2.1.4.21.3.1.1)
+    tag: ip_version
+    index: 1
+    mapping:
+      0: unknown
+      1: ipv4
+      2: ipv6
+      3: ipv4z
+      4: ipv6z
+      16: dns
+  - # ipIfStatsIfIndex (1.3.6.1.2.1.4.21.3.1.2)
+    tag: interface
+    index: 2
+ ```
+ */
+func parseTableMetricTag(mib string, parsed_table ParsedSymbol, metric_tag TableMetricTag) ParsedTableMetricTag{
 	if metric_tag.Column != (Symbol{}) {
 		metric_tag_mib := metric_tag.MIB
 
@@ -472,21 +629,23 @@ func parseTableMetricTag(mib string, parsed_table ParsedSymbol, metric_tag Table
 	}
 
 	if &metric_tag.Index != nil{
-		return parseIndexMetricTag(metricTag)
+		return parseIndexMetricTag(metric_tag)
 	}
+
+	return ParsedTableMetricTag{}
 }
 
 func parseIndexMetricTag(metric_tag TableMetricTag) ParsedTableMetricTag{
 	index_tags := []IndexTag{IndexTag{
-		ParsedMetricTag: parsed_metric_tag(MetricTag{
+		ParsedMetricTag: parseMetricTag(MetricTag{
 			Tag: metric_tag.Tag,
 		}),Index: metric_tag.Index,
 	}}
 
-	index_mappings := map[int]map[string]string{}
+	index_mappings := map[int]map[int]string{}
 
 	if metric_tag.Mapping != nil {
-		index_mappings:=map[int]map[string]string{metric_tag.Index:metric_tag.Mapping}
+		index_mappings=map[int]map[int]string{metric_tag.Index:metric_tag.Mapping}
 	}
 
 	return ParsedTableMetricTag{
@@ -573,10 +732,6 @@ func parseIndexSlices(metric_tag TableMetricTag) []IndexSlice {
 	return index_slices
 }
 
-type IndexSlice struct {
-	Start int
-	End int
-}
 
 
 
@@ -612,7 +767,7 @@ func parseRegexMetricTag(metric_tag MetricTag)ParsedMetricTag{
 
 
 	// Create and return a new ParsedMatchMetricTag.
-	return ParsedMetricTag{Tags: tags,Pattern: pattern}
+	return ParsedMetricTag{tags: tags,pattern: pattern}
 
 }
 
@@ -633,45 +788,6 @@ func mergeMaps(m1 map[string]string, m2 map[string]string) map[string]string {
 	return merged
 }
 
-func parseSymbolMetric(metric Metric) MetricParseResult {
-	//     Parse a symbol metric (= an OID in a MIB).
-	//     Example:
-
-	//     ```
-	//     metrics:
-	//       - MIB: IF-MIB
-	//         symbol: <string or OID/name object>
-	//       - MIB: IF-MIB
-	//         symbol:                     # MIB-less syntax
-	//           OID: 1.3.6.1.2.1.6.5.0
-	//           name: tcpActiveOpens
-	//       - MIB: IF-MIB
-	//         symbol: tcpActiveOpens      # require MIB syntax
-	//     ```
-	mib := metric.MIB
-	symbol := metric.Symbol
-
-	parsed_symbol := parseSymbol(mib, symbol)
-
-	parsed_symbol_metric := ParsedMetric{
-		Name:                parsed_symbol.Name,
-		Tags:                metric.Tags,
-		Type:                metric.Type,
-		EnforceScalar:       false,
-		Options:             metric.Options,
-		ExtractValuePattern: parsed_symbol.ExtractValuePattern,
-		IndexTags:           nil,
-		ColumnTags:          nil,
-	}
-
-	return MetricParseResult{
-		OIDsToFetch:[]string{parsed_symbol.OID},
-		OIDsToResolve:parsed_symbol.OIDsToResolve,
-		ParsedMetrics:[]ParsedMetric{parsed_symbol_metric},
-		TableBatches: nil,
-		IndexMappings: nil,
-	}
-}
 
 
 func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
