@@ -19,7 +19,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-
 func main() {
 	profileDir := "../snmp_profiles/default_profiles/"
 	subnet := "20.20.21.0/24" // CHANGE THIS TO YOUR SUBNET
@@ -97,107 +96,155 @@ func main() {
 		// // results := make(map[string]string)
 
 		// Walk through the SNMP device using all matched profiles
+
+		metricMap := map[string]processedMetric{}
+
 		for name, profile := range matchingProfiles {
 			fmt.Println("Profile:", name)
-			
-			fmt.Println(parseMetrics(profile.Metrics))
+
+			results := parseMetrics(profile.Metrics)
+			// fmt.Println(parseMetrics(profile.Metrics))
+			// walk OID subtree
+			for _, oid := range results.next_oids {
+				if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
+					log.Fatalf("Error walking OID tree: %v", err)
+				} else {
+					fmt.Println(tableRows)
+					
+					for _, metric := range results.parsed_metrics {
+						switch s := metric.(type) {
+						case ParsedSymbolMetric:
+							// fmt.Println("parsedsymbolmetric")
+						case ParsedTableMetric:
+							// fmt.Println("parsedtablemetric")
+							if s.baseoid == oid {
+								fmt.Println("FOUND MATCH", s)
+								
+								for key,value := range tableRows{
+									value.name = s.Name
+									fmt.Println(value)
+									tableRows[key] = value
+								}
+
+								
+								// fmt.Println(tableRows)
+								metricMap = mergeProcessedMetricMaps(metricMap, tableRows)
+								// os.Exit(16)
+							}
+						default:
+							fmt.Println("NONE OF THE TWO",s)
+						}
+					}
+
+					// response, err := walkOIDTree(deviceIP, oid, "public")
+					// if err != nil {
+					// 	log.Fatalf("SNMP Exec failed: %v", err)
+					// }
+
+					// if len(response) > 0 {}
+				}
+			}
+
+			for _, value := range metricMap {
+				fmt.Println(value)
+			}
+			// 	if metric.Symbol != nil {
+			// 		// we have a symbol metric
+
+			// 		// parseSymbolMetric()
+
+			// 		// continue
+			// 		// response, err := SNMPGetExec(deviceIP, metric.Symbol.OID, "public")
+			// 		// if err != nil {
+			// 		// 	log.Fatalf("SNMP Exec failed: %v", err)
+			// 		// }
+
+			// 		// if len(response) > 0 {
+
+			// 		// 	metricName := metric.Symbol.Name
+			// 		// 	metricSplit := strings.SplitN(strings.SplitN(response, " = ", 2)[1], ": ", 2)
+			// 		// 	if len(metricSplit) < 2 {
+			// 		// 		fmt.Print(metricSplit)
+			// 		// 		os.Exit(-9324)
+			// 		// 	}
+			// 		// 	metricType := metricSplit[0]
+			// 		// 	metricValue := metricSplit[1]
+
+			// 		// 	fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
+			// 		// }
+			// 	} else if metric.Table != nil {
+			// 		for _, symbol := range metric.Symbols {
+			// 			if len(symbol.OID) > 1 {
+			// 				// if it is a table we do a walk instead of a get
+			// 				response, err := SNMPWalkExec(deviceIP, symbol.OID, "public")
+			// 				if err != nil {
+			// 					log.Fatalf("SNMP Exec failed: %v", err)
+			// 				}
+
+			// 				if len(response) > 0 {
+			// 					// iterate through the response
+
+			// 					for _, response := range response {
+
+			// 						metric_type := response[0]
+			// 						metric_value := response[1]
+
+			// 						fmt.Print(metric_type, metric_value, "\n")
+
+			// 						fmt.Printf("METRIC: %s | %s | %s\n", symbol.Name, metric_type, metric_value)
+
+			// 					}
+			// 					os.Exit(129)
+			// 				}
+			// 			}
+			// 		}
+			// 		// fmt.Print("something")
+			// 	}
+			// if metric.Symbol != nil {
+			// 	val, ok := deviceData[metric.Symbol.OID]
+			// 	// If the key exists
+			// 	if ok {
+			// 		// Do something
+			// 		// you have the symbol found here
+
+			// 		metricName := metric.Symbol.Name
+			// 		metricSplit := strings.SplitN(val, ": ", 2)
+			// 		metricType := metricSplit[0]
+			// 		metricValue := metricSplit[1]
+
+			// 		fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
+
+			// 	}
+			// 	// for key := range deviceData {
+			// 	// 	if strings.Contains(key, metric.Symbol.OID) {
+			// 	// 		fmt.Println("Found:", key)
+			// 	// 	}
+			// } else if metric.Table != nil {
+			// 	fmt.Print("TABLE FOUND\n")
+			// 	metricName := metric.Symbol.Name
+			// 	metricSplit := strings.SplitN(val, ": ", 2)
+			// 	metricType := metricSplit[0]
+			// 	metricValue := metricSplit[1]
+
+			// 	fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
+			// 	// os.Exit(19)
+
+			// }
+
+			// WalkOID(snmp, metric.Symbol.OID, metric.Symbol.Name, results)
+			// // 			// deviceDict["0"]["1"] = 1
+			// // 		} else if metric.Table != nil {
+			// // 			for _, sym := range metric.Symbols {
+			// // 				fmt.Printf("HERE %s\n", sym.OID)
+			// // 				// os.Exit(1)
+			// // 				// WalkOID(snmp, sym.OID, sym.Name, results)
+
+			// // 				// todo build a savable index here, and call the func to update it. The dict would be metric_name and value. it can be MIB.name and if it is a table an index I guess
+			// // 			}
+			// // 		}
+			// }
+			// }
 		}
-		// 	if metric.Symbol != nil {
-		// 		// we have a symbol metric
-
-		// 		// parseSymbolMetric()
-
-		// 		// continue
-		// 		// response, err := SNMPGetExec(deviceIP, metric.Symbol.OID, "public")
-		// 		// if err != nil {
-		// 		// 	log.Fatalf("SNMP Exec failed: %v", err)
-		// 		// }
-
-		// 		// if len(response) > 0 {
-
-		// 		// 	metricName := metric.Symbol.Name
-		// 		// 	metricSplit := strings.SplitN(strings.SplitN(response, " = ", 2)[1], ": ", 2)
-		// 		// 	if len(metricSplit) < 2 {
-		// 		// 		fmt.Print(metricSplit)
-		// 		// 		os.Exit(-9324)
-		// 		// 	}
-		// 		// 	metricType := metricSplit[0]
-		// 		// 	metricValue := metricSplit[1]
-
-		// 		// 	fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-		// 		// }
-		// 	} else if metric.Table != nil {
-		// 		for _, symbol := range metric.Symbols {
-		// 			if len(symbol.OID) > 1 {
-		// 				// if it is a table we do a walk instead of a get
-		// 				response, err := SNMPWalkExec(deviceIP, symbol.OID, "public")
-		// 				if err != nil {
-		// 					log.Fatalf("SNMP Exec failed: %v", err)
-		// 				}
-
-		// 				if len(response) > 0 {
-		// 					// iterate through the response
-
-		// 					for _, response := range response {
-
-		// 						metric_type := response[0]
-		// 						metric_value := response[1]
-
-		// 						fmt.Print(metric_type, metric_value, "\n")
-
-		// 						fmt.Printf("METRIC: %s | %s | %s\n", symbol.Name, metric_type, metric_value)
-
-		// 					}
-		// 					os.Exit(129)
-		// 				}
-		// 			}
-		// 		}
-		// 		// fmt.Print("something")
-		// 	}
-		// if metric.Symbol != nil {
-		// 	val, ok := deviceData[metric.Symbol.OID]
-		// 	// If the key exists
-		// 	if ok {
-		// 		// Do something
-		// 		// you have the symbol found here
-
-		// 		metricName := metric.Symbol.Name
-		// 		metricSplit := strings.SplitN(val, ": ", 2)
-		// 		metricType := metricSplit[0]
-		// 		metricValue := metricSplit[1]
-
-		// 		fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-
-		// 	}
-		// 	// for key := range deviceData {
-		// 	// 	if strings.Contains(key, metric.Symbol.OID) {
-		// 	// 		fmt.Println("Found:", key)
-		// 	// 	}
-		// } else if metric.Table != nil {
-		// 	fmt.Print("TABLE FOUND\n")
-		// 	metricName := metric.Symbol.Name
-		// 	metricSplit := strings.SplitN(val, ": ", 2)
-		// 	metricType := metricSplit[0]
-		// 	metricValue := metricSplit[1]
-
-		// 	fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-		// 	// os.Exit(19)
-
-		// }
-
-		// WalkOID(snmp, metric.Symbol.OID, metric.Symbol.Name, results)
-		// // 			// deviceDict["0"]["1"] = 1
-		// // 		} else if metric.Table != nil {
-		// // 			for _, sym := range metric.Symbols {
-		// // 				fmt.Printf("HERE %s\n", sym.OID)
-		// // 				// os.Exit(1)
-		// // 				// WalkOID(snmp, sym.OID, sym.Name, results)
-
-		// // 				// todo build a savable index here, and call the func to update it. The dict would be metric_name and value. it can be MIB.name and if it is a table an index I guess
-		// // 			}
-		// // 		}
-		// }
-		// }
 	}
 }
 
@@ -351,6 +398,7 @@ type ParsedSymbolMetric struct {
 	EnforceScalar       bool
 	Options             map[string]string
 	ExtractValuePattern *regexp.Regexp
+	baseoid string
 }
 
 type ParsedTableMetric struct {
@@ -360,6 +408,7 @@ type ParsedTableMetric struct {
 	ForcedType          string
 	Options             map[string]string
 	ExtractValuePattern *regexp.Regexp
+	baseoid string
 }
 
 // union of two above
@@ -440,15 +489,15 @@ func parseMetrics(metrics []Metric) parseResult {
 
 		result := parseMetric(metric)
 
-		for _, oid := range result.oidsToFetch {
-			oids = append(oids, oid)
-		}
+		oids = append(oids, result.oidsToFetch...)
 
 		for name, oid := range result.oidsToResolve {
+			// here in the python implementation a registration happens to their OIDResolver. I will not support this atm
 			oids_to_resolve = append(oids_to_resolve, map[string]string{name: oid})
 		}
 
 		for _, index_mapping := range result.indexMappings {
+			// same as above
 			indexes_to_resolve = append(indexes_to_resolve, index_mapping)
 		}
 
@@ -522,14 +571,14 @@ func parseMetric(metric Metric) MetricParseResult {
 		}
 	}
 	if len(metric.OID) > 0 {
-		fmt.Printf("parseMetric/Parsing metric: %s\n",metric.Name)
+		fmt.Printf("parseMetric/Parsing metric: %s\n", metric.Name)
 		return (parseOIDMetric(OIDMetric{Name: metric.Name, OID: metric.OID, MetricTags: castedStringMetricTags, ForcedType: metric.MetricType, Options: metric.Options}))
-	}	else if len(metric.MIB) == 0 {
+	} else if len(metric.MIB) == 0 {
 		fmt.Errorf("Unsupported metric {%v}", metric)
 	} else if metric.Symbol != nil {
 		return (parseSymbolMetric(SymbolMetric{MIB: metric.MIB, Symbol: metric.Symbol, ForcedType: metric.MetricType, MetricTags: castedStringMetricTags, Options: metric.Options}))
 	} else if metric.Table != nil {
-		fmt.Printf("parseMetric/Parsing Table: %s\n",metric.Table)
+		fmt.Printf("parseMetric/Parsing Table: %s\n", metric.Table)
 
 		if metric.Symbols == nil {
 			fmt.Errorf("When specifying a table, you must specify a list of symbols %s", metric)
@@ -566,6 +615,7 @@ func parseOIDMetric(metric OIDMetric) MetricParseResult {
 		ForcedType:    metric.ForcedType,
 		EnforceScalar: true,
 		Options:       metric.Options,
+		baseoid: oid,
 	}
 
 	return MetricParseResult{
@@ -606,6 +656,7 @@ func parseSymbolMetric(metric SymbolMetric) MetricParseResult {
 		EnforceScalar:       false,
 		Options:             metric.Options,
 		ExtractValuePattern: parsed_symbol.ExtractValuePattern,
+		// baseoid: oid,
 	}
 
 	return MetricParseResult{
@@ -621,12 +672,10 @@ func parseSymbolMetric(metric SymbolMetric) MetricParseResult {
 // done translating
 func parseTableMetric(metric TableMetric) MetricParseResult {
 
-	
 	mib := metric.MIB
-	
+	fmt.Printf("attempting to parse table with parseSymbol %s\n", metric.Table)
 	parsed_table := parseSymbol(mib, metric.Table)
 	fmt.Printf("Parsed_table: %s\n", parsed_table)
-
 
 	oids_to_resolve := parsed_table.OIDsToResolve
 
@@ -640,7 +689,7 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 			parsed_table_metric_tag := parseTableMetricTag(mib, parsed_table, metric_tag)
 
 			if parsed_table_metric_tag.OIDsToResolve != nil {
-				oids_to_resolve = mergeMaps(oids_to_resolve, parsed_table_metric_tag.OIDsToResolve)
+				oids_to_resolve = mergeStringMaps(oids_to_resolve, parsed_table_metric_tag.OIDsToResolve)
 
 				column_tags = append(column_tags, parsed_table_metric_tag.ColumnTags...)
 
@@ -678,6 +727,8 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 	for _, symbol := range metric.Symbols {
 		parsed_symbol := parseSymbol(mib, symbol)
 
+		fmt.Printf("PARSED SYMBOL %s\n", parsed_symbol)
+
 		for key, value := range parsed_symbol.OIDsToResolve {
 			oids_to_resolve[key] = value
 		}
@@ -691,7 +742,10 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 			ForcedType:          metric.ForcedType,
 			Options:             metric.Options,
 			ExtractValuePattern: parsed_symbol.ExtractValuePattern,
+			baseoid: parsed_symbol.OID,
 		}
+
+		fmt.Printf("PARSED TABLE METRIC %s\n", parsed_table_metric)
 
 		parsed_metrics = append(parsed_metrics, parsed_table_metric)
 	}
@@ -863,7 +917,7 @@ func parseOtherTableColumnMetricTag(mib string, table string, metric_tag TableMe
 	parsed_metric_tag := parseColumnMetricTag(mib, parsed_table, metric_tag)
 
 	oids_to_resolve := parsed_metric_tag.OIDsToResolve
-	oids_to_resolve = mergeMaps(oids_to_resolve, parsed_table.OIDsToResolve)
+	oids_to_resolve = mergeStringMaps(oids_to_resolve, parsed_table.OIDsToResolve)
 
 	return ParsedTableMetricTag{
 		OIDsToResolve: oids_to_resolve,
@@ -975,8 +1029,18 @@ func parseSimpleMetricTag(metric_tag MetricTag) ParsedMetricTag {
 	return ParsedMetricTag{Name: metric_tag.Tag}
 }
 
-func mergeMaps(m1 map[string]string, m2 map[string]string) map[string]string {
+func mergeStringMaps(m1 map[string]string, m2 map[string]string) map[string]string {
 	merged := make(map[string]string)
+	for k, v := range m1 {
+		merged[k] = v
+	}
+	for key, value := range m2 {
+		merged[key] = value
+	}
+	return merged
+}
+func mergeProcessedMetricMaps(m1 map[string]processedMetric, m2 map[string]processedMetric) map[string]processedMetric {
+	merged := make(map[string]processedMetric)
 	for k, v := range m1 {
 		merged[k] = v
 	}
@@ -1009,12 +1073,12 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 
 	// 	// return ParsedSymbol
 	// }
-	
-	fmt.Printf("ParsingSymbol %s for MIB %s\n",symbol,mib)
+
+	fmt.Printf("ParsingSymbol %s for MIB %s with type %s\n", symbol, mib, reflect.TypeOf(symbol))
 
 	switch s := symbol.(type) {
 	case Symbol:
-		// fmt.Printf("Symbol found\n")
+		fmt.Printf("Symbol found\n")
 		oid := s.OID
 		name := s.Name
 		if s.ExtractValue != "" {
@@ -1024,14 +1088,20 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 				return ParsedSymbol{}
 				// return "", fmt.Errorf("Failed to compile regular expression %q: %v", symbol.ExtractValue, err)
 			}
+			fmt.Printf("Returning regexcase %s", ParsedSymbol{
+				name,
+				oid,
+				extractValuePattern,
+				map[string]string{name: oid},
+			})
 			return ParsedSymbol{
 				name,
 				oid,
 				extractValuePattern,
 				map[string]string{name: oid},
 			}
-		}else{
-			fmt.Printf("Returning %s\n",ParsedSymbol{
+		} else {
+			fmt.Printf("Returning %s\n", ParsedSymbol{
 				name,
 				oid,
 				nil,
@@ -1045,9 +1115,47 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 			}
 		}
 	case string:
+		fmt.Printf("string, can't support yet\n")
+		return ParsedSymbol{}
+	// case interface{}:
+	// 	v:=s.(Symbol)
+	// 	oid := v.OID
+	// 	name := v.Name
+	// 	fmt.Printf("interface found\n", )
+
+	// 	fmt.Printf("Returning %s\n",ParsedSymbol{
+	// 		name,
+	// 		oid,
+	// 		nil,
+	// 		map[string]string{name: oid},
+	// 	})
+	// 	return ParsedSymbol{
+	// 		name,
+	// 		oid,
+	// 		nil,
+	// 		map[string]string{name: oid},
+	// 	}
+	case map[string]interface{}:
+		oid, okOID := s["OID"].(string)
+		name, okName := s["name"].(string)
+
+		if !okOID || !okName {
+			fmt.Errorf("invalid symbol format: %+v", s)
+			return ParsedSymbol{}
+		}
+
+		return ParsedSymbol{
+			Name:                name,
+			OID:                 oid,
+			ExtractValuePattern: nil,
+			OIDsToResolve:       map[string]string{name: oid},
+		}
+
+	default:
+		fmt.Errorf("unsupported symbol type: %T", symbol)
 		return ParsedSymbol{}
 	}
-	return ParsedSymbol{}
+
 }
 
 func (s *SysObjectIDs) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -1312,10 +1420,10 @@ func SNMPWalkExec(target string, oid string, community string) (map[string][2]st
 	return results, nil
 }
 
-// Execute SNMPWalk via shell command
+// Execute SNMPGet via shell command
 func SNMPGetExec(target string, oid string, community string) (string, error) {
 	// result := make(map[string]string)
-
+	fmt.Println("snmpget", "-v2c", "-c", community, target, oid)
 	// Construct the snmpwalk command
 	cmd := exec.Command("snmpget", "-v2c", "-c", community, target, oid) // Walk entire SNMP tree
 
@@ -1347,4 +1455,65 @@ func SNMPGetExec(target string, oid string, community string) (string, error) {
 
 }
 
+func runSNMPGetNext(target string, oid string, community string) (string, error) {
+	cmd := exec.Command("snmpgetnext", "-v2c", "-c", community, target, oid)
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("snmpgetnext failed: %v - %s", err, stderr.String())
+	}
+	return out.String(), nil
+}
 
+type processedMetric struct {
+	// adapt netdata specific keys here
+	OID         string
+	name        string
+	value       string
+	metric_type string
+}
+
+func walkOIDTree(target, community, baseOID string) (map[string]processedMetric, error) {
+	currentOID := baseOID
+
+	tableRows := map[string]processedMetric{}
+
+	for {
+		if len(currentOID) > 0 {
+			fmt.Println("doing snmpgetnext for", currentOID)
+			output, err := runSNMPGetNext(target, currentOID, community)
+			if err != nil {
+				return tableRows, err
+			}
+			// Assume output is in the format: "<nextOID> = <value>"
+			parts := strings.Fields(output)
+			if len(parts) < 1 {
+				fmt.Println("No OID returned, ending walk.")
+				return tableRows, nil
+			}
+
+			nextOID := strings.Replace(parts[0], "iso", "1", 1)
+			// If the next OID does not start with the base OID, we've reached the end of the subtree.
+			if !strings.HasPrefix(nextOID, baseOID) {
+				fmt.Println("Not same prefix", baseOID, nextOID)
+				// fmt.Printf("OID: %s, Value: %s\n", nextOID, strings.Join(parts[2:], " "))
+
+				fmt.Println("Reached end of subtree.")
+				return tableRows, nil
+			}
+			fmt.Println("OID:", nextOID, "Value:", parts[2:])
+
+			fmt.Println(processedMetric{OID: nextOID, value: parts[3], metric_type: parts[2]})
+
+			tableRows[nextOID]= processedMetric{OID: nextOID, value: parts[3], metric_type: strings.Replace(parts[2],":","",1)}
+
+			currentOID = nextOID
+		} else {
+			fmt.Println("empty response, returning")
+			return tableRows, nil
+		}
+	}
+}
