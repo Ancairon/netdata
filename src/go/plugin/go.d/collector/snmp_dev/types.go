@@ -1,36 +1,139 @@
-// pysnmp_types.go
-package snmp_dev
+package main
 
 import "regexp"
 
-// Asn1Type is a placeholder for pyasn1.type.base.Asn1Type.
-type Asn1Type interface{}
-
-// CommunityData represents SNMP community data.
-type CommunityData struct {
-	Community string
-	MpModel   int // 0 for SNMPv1, 1 for SNMPv2
+type Metadata struct {
+	Device DeviceMetadata `yaml:"device"`
 }
 
-// ParseMetricsResult is the output of parsing the metrics section.
-type ParseMetricsResult struct {
-	Oids          []OID
-	NextOids      []OID
-	BulkOids      []OID
-	ParsedMetrics []ParsedMetric
-} // Intermediate types used for parsed results:
+type processedMetric struct {
+	// adapt netdata specific keys here
+	OID         string
+	name        string
+	Value       string
+	metric_type string
+}
+
+type DeviceMetadata struct {
+	Fields map[string]Symbol `yaml:"fields"`
+}
+
+type parseResult struct {
+	oids           []string
+	next_oids      []string
+	bulk_oids      []string
+	parsed_metrics []ParsedMetric
+}
+// MetricDefinition represents a metric with a type and a value.
+type MetricDefinition struct {
+	Type  string  `json:"type"`
+	Value float64 `json:"value"`
+}
+
+type Symbol struct {
+	OID  string `yaml:"OID,omitempty"`
+	Name string `yaml:"name,omitempty"`
+	MatchPattern string `yaml:"match_pattern,omitempty"`
+	MatchValue   string `yaml:"match_value,omitempty"`
+	ExtractValue string `yaml:"extract_value,omitempty"`
+}
+
+type IndexTableMetricTag struct {
+	Index   int
+	Mapping map[int]string
+	Tag     string
+}
+
+type ColumnTableMetricTag struct {
+	MIB            string
+	Column         Symbol
+	Table          string
+	Tag            string
+	IndexTransform []IndexSlice
+}
+
+// In python this is used as a union of the above types, here we will implement it and then check the type with reflect
+type TableMetricTag struct {
+	Index   int
+	Mapping map[int]string
+
+	Tag string
+
+	MIB            string
+	Column         Symbol
+	Table          string
+	IndexTransform []IndexSlice
+}
+
+type OIDMetric struct {
+	Name       string   `yaml:"Name"`
+	OID        string   `yaml:"OID"`
+	MetricTags []string `yaml:"metric_tags,omitempty"`
+	ForcedType string   `yaml:"metric_type,omitempty"`
+	Options    map[string]string
+}
+
+type SymbolMetric struct {
+	MIB        string      `yaml:"MIB"`
+	Symbol     interface{} `yaml:"symbol,omitempty"` //can be either string or Symbol
+	ForcedType string      `yaml:"metric_type,omitempty"`
+	MetricTags []string
+	Options    map[string]string
+}
+
+type TableMetric struct {
+	MIB        string
+	Table      interface{} // can be either a string or Symbol
+	Symbols    []Symbol
+	ForcedType string
+	MetricTags []TableMetricTag
+	Options    map[string]string
+}
+
+// superset of OIDMetric, SymbolMetric and TableMetric
+type Metric struct {
+	Name       string        `yaml:"name,omitempty"`
+	OID        string        `yaml:"OID,omitempty"`
+	MetricTags []interface{} `yaml:"metric_tags,omitempty"`
+	MetricType string        `yaml:"metric_type,omitempty"`
+	Options    map[string]string
+
+	MIB    string      `yaml:"MIB,omitempty"`
+	Symbol SymbolOrString `yaml:"symbol,omitempty"` //can be either string or Symbol
+
+	Table   interface{} `yaml:"table,omitempty"` // can be either a string or Symbol
+	Symbols []Symbol
+}
+
+type SymbolOrString struct {
+    Symbol Symbol
+}
+
+
+
 type IndexMapping struct {
 	Tag     string
 	Index   int
-	Mapping map[string]interface{}
+	Mapping map[int]string
 }
+
 type TableBatchKey struct {
-	Mib   string
+	MIB   string
 	Table string
 }
+
 type TableBatch struct {
-	TableOid OID
-	Oids     []OID
+	TableOID string
+	OIDs     []string
+}
+
+type TableBatches map[TableBatchKey]TableBatch
+
+type ParsedSymbol struct {
+	Name                string
+	OID                 string
+	ExtractValuePattern *regexp.Regexp
+	OIDsToResolve       map[string]string
 }
 
 type IndexTag struct {
@@ -39,235 +142,111 @@ type IndexTag struct {
 }
 
 type ColumnTag struct {
-	ParsedMetricTag ParsedMetricTag
-	Column          string
-	IndexSlices     []IndexSlice
+	DEDUPParsedMetricTag ParsedMetricTag
+	Column               string
+	IndexSlices          []IndexSlice
 }
 
-// OIDTreeNode is a node in the OID trie.
-type OIDTreeNode struct {
-	Name     *string
-	Children map[int]*OIDTreeNode
+type ParsedColumnMetricTag struct {
+	OIDsToResolve map[string]string
+	TableBatches  TableBatches
+	ColumnTags    []ColumnTag
+}
+type ParsedIndexMetricTag struct {
+	IndexTags     []IndexTag
+	IndexMappings map[int]map[string]string
 }
 
-// ParsedSymbolMetric holds data for a symbol metric.
+type ParsedTableMetricTag struct {
+	OIDsToResolve map[string]string
+	TableBatches  TableBatches
+	ColumnTags    []ColumnTag
+	IndexTags     []IndexTag
+	IndexMappings map[int]map[int]string
+}
+
 type ParsedSymbolMetric struct {
 	Name                string
 	Tags                []string
 	ForcedType          string
 	EnforceScalar       bool
-	Options             map[string]interface{}
+	Options             map[string]string
 	ExtractValuePattern *regexp.Regexp
+	baseoid string //TODO change this to OID, it will not have nested OIDs as it is a symbol
 }
 
-// Device represents an SNMP device.
-type Device struct {
-	IP     string
-	Port   int
-	Target string
-}
-
-// ParsedMatchMetricTag holds a regex-based parsed metric tag.
-type ParsedMatchMetricTag struct {
-	Tags    map[string]string
-	Pattern *regexp.Regexp
-}
-
-// ParsedMetricTag is a union of ParsedSimpleMetricTag and ParsedMatchMetricTag.
-type ParsedMetricTag interface {
-	MatchedTags(value interface{}) []string
-}
-
-// ParsedTableMetric holds data for a table metric.
 type ParsedTableMetric struct {
 	Name                string
-	IndexTags           []any
-	ColumnTags          []any
+	IndexTags           []IndexTag
+	ColumnTags          []ColumnTag
 	ForcedType          string
-	Options             map[string]interface{}
+	Options             map[string]string
 	ExtractValuePattern *regexp.Regexp
+	baseoid string
 }
 
-// ParsedMetric is a union of ParsedSymbolMetric and ParsedTableMetric.
-type ParsedMetric interface {
-	GetName() string
-}
+// union of two above
+type ParsedMetric interface{}
 
-// ParsedSimpleMetricTag holds a simple parsed metric tag.
 type ParsedSimpleMetricTag struct {
 	Name string
 }
 
-// IndexSlice represents a slice with a start and end index.
-type IndexSlice struct {
-	Start int
-	Stop  int
-} // OIDTrie stores OID prefixes.
-type OIDTrie struct {
-	Root *OIDTreeNode
-} // OIDMatch represents the result of resolving an OID.
-type OIDMatch struct {
-	Name    string
-	Indexes []string
+type ParsedMatchMetricTag struct {
+	tags    []string
+	symbol  Symbol
+	pattern *regexp.Regexp
 }
 
-// OIDResolver resolves OIDs.
-type OIDResolver struct {
-	MibViewController  MibViewController
-	Resolver           *OIDTrie
-	IndexResolvers     map[string]map[int]map[int]string
-	EnforceConstraints bool
+type ParsedMetricTag struct {
+	Name string
+
+	tags    []string
+	symbol  Symbol
+	pattern *regexp.Regexp
 }
 
-// MIBSymbol is a dummy structure returned by getMIBSymbol.
-type MIBSymbol struct {
-	Mib    string
-	Symbol string
-	Prefix []string
-}
-type ParsedColumnMetricTag struct {
-	OidsToResolve map[string]OID
-	TableBatches  map[TableBatchKey]TableBatch
-	ColumnTags    []ColumnTag
+type SymbolTag struct {
+	parsedMetricTag ParsedMetricTag
+	symbol          string
 }
 
-type ParsedIndexMetricTag struct {
-	IndexTags     []IndexTag
-	IndexMappings map[int]map[string]interface{}
+type ParsedSymbolTagsResult struct {
+	oids             []string
+	parsedSymbolTags []SymbolTag
 }
-type ParsedTableMetricTag interface{}
 
-// ParsedSymbol holds parsed data from a symbol.
-type ParsedSymbol struct {
-	name                string
-	oid                 OID
-	extractValuePattern *regexp.Regexp
-	oidsToResolve       map[string]OID
-}
-type TableBatches map[TableBatchKey]TableBatch
-
-// MetricParseResult holds intermediary parsed data.
 type MetricParseResult struct {
-	OidsToFetch   []OID
-	OidsToResolve map[string]OID
-	IndexMappings []IndexMapping
-	TableBatches  TableBatches
-	ParsedMetrics []ParsedMetric
+	oidsToFetch   []string
+	oidsToResolve map[string]string
+	indexMappings []IndexMapping
+	tableBatches  TableBatches
+	parsedMetrics []ParsedMetric
 }
 
 type MetricTag struct {
-	Symbol string            `json:"symbol,omitempty"`
-	MIB    string            `json:"MIB,omitempty"`
-	OID    string            `json:"OID,omitempty"`
-	Tag    string            `json:"tag,omitempty"`
-	Match  string            `json:"match,omitempty"`
-	Tags   map[string]string `json:"tags,omitempty"`
-}
-type MetricTagParseResult struct {
-	Oid           OID
-	SymbolTag     SymbolTag
-	OidsToResolve map[string]OID
-}
-type SymbolTag struct {
-	ParsedMetricTag ParsedMetricTag
-	Symbol          string
-}
-type metricTagParseResult struct {
-	Oid           OID
-	SymbolTag     SymbolTag
-	OidsToResolve map[string]OID
+	OID    string
+	MIB    string
+	Symbol string `yaml:"symbol"`
+	// simple tag
+	Tag string `yaml:"tag"`
+	// regex matching
+	Match string
+	Tags  []string
 }
 
-// OID represents an SNMP Object Identifier.
-type OID struct {
-	Parts []int
+type IndexSlice struct {
+	Start int
+	End   int
 }
 
-// ContextData represents SNMP context parameters.
-type ContextData struct {
-	ContextEngineID string
-	ContextName     string
+// Profile represents the structure of a Datadog SNMP profile.
+type Profile struct {
+	Extends     []string     `yaml:"extends"`
+	SysObjectID SysObjectIDs `yaml:"sysobjectid"`
+	Metadata    Metadata     `yaml:"metadata"`
+	Metrics     []Metric     `yaml:"metrics"`
 }
 
-// ObjectIdentity represents an SNMP object identity.
-type ObjectIdentity interface {
-	ResolveWithMib(mibViewController MibViewController) error
-	GetMibSymbol() (mib string, symbol string, indexes []ObjectName, err error)
-}
-
-// ObjectType represents an SNMP object type.
-type ObjectType interface {
-	GetObjectIdentity() ObjectIdentity
-}
-
-// SnmpEngine represents the SNMP engine.
-type SnmpEngine struct {
-	MsgAndPduDsp *MsgAndPduDispatcher
-}
-
-// UdpTransportTarget represents the UDP transport target for SNMP queries.
-type UdpTransportTarget struct {
-	Address string
-	Port    int
-	Timeout float64
-	Retries int
-}
-
-// NewUdpTransportTarget creates a new UDP transport target.
-func NewUdpTransportTarget(ip string, port int, timeout float64, retries int) UdpTransportTarget {
-	return UdpTransportTarget{
-		Address: ip,
-		Port:    port,
-		Timeout: timeout,
-		Retries: retries,
-	}
-}
-
-// UsmUserData represents SNMPv3 user data.
-type UsmUserData struct {
-	User         string
-	AuthKey      string
-	PrivKey      string
-	AuthProtocol interface{}
-	PrivProtocol interface{}
-}
-
-var UsmDESPrivProtocol = "usmDESPrivProtocol"
-var UsmHMACMD5AuthProtocol = "usmHMACMD5AuthProtocol"
-
-// lcd is a placeholder.
-var lcd = "lcd_placeholder"
-
-// AbstractTransportTarget is a placeholder.
-type AbstractTransportTarget interface{}
-
-// ObjectName represents an SNMP object name.
-type ObjectName interface {
-	PrettyPrint() string
-}
-
-// Opaque represents an opaque SNMP type.
-type Opaque interface{}
-
-// MsgAndPduDispatcher is a placeholder.
-type MsgAndPduDispatcher struct{}
-
-// DirMibSource represents a directory containing MIBs.
-type DirMibSource string
-
-// MibBuilder is a placeholder.
-type MibBuilder struct{}
-
-// MibInstrumController is a placeholder.
-type MibInstrumController struct {
-	Builder *MibBuilder
-}
-
-// MibViewController is a placeholder.
-type MibViewController struct {
-	Builder *MibBuilder
-}
-
-var EndOfMibView = "endOfMibView"
-var NoSuchInstance = "noSuchInstance"
-var NoSuchObject = "noSuchObject"
+// SysObjectIDs allows both a string and list of strings for sysobjectid.
+type SysObjectIDs []string
