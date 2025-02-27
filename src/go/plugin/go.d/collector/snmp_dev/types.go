@@ -53,6 +53,8 @@ type ColumnTableMetricTag struct {
 }
 
 // In python this is used as a union of the above types, here we will implement it and then check the type with reflect
+
+//TODO check for s["Tag"] if and when making these lowecase
 type TableMetricTag struct {
 	Index   int
 	Mapping map[int]string
@@ -60,7 +62,7 @@ type TableMetricTag struct {
 	Tag string
 
 	MIB            string
-	Column         Symbol
+	Symbol         Symbol
 	Table          string
 	IndexTransform []IndexSlice
 }
@@ -94,20 +96,21 @@ type TableMetric struct {
 type Metric struct {
 	Name       string        `yaml:"name,omitempty"`
 	OID        string        `yaml:"OID,omitempty"`
+	//TODO check for only name existing in metric tag, as there is some case for that
 	MetricTags []interface{} `yaml:"metric_tags,omitempty"`
 	MetricType string        `yaml:"metric_type,omitempty"`
 	Options    map[string]string
 
 	MIB    string      `yaml:"MIB,omitempty"`
-	Symbol SymbolOrString `yaml:"symbol,omitempty"` //can be either string or Symbol
+	Symbol Symbol `yaml:"symbol,omitempty"` //can be either string or Symbol
 
 	Table   interface{} `yaml:"table,omitempty"` // can be either a string or Symbol
-	Symbols []Symbol
+	Symbols []Symbol `yaml:"symbols,omitempty"`
 }
 
-type SymbolOrString struct {
-    Symbol Symbol
-}
+// type SymbolOrString struct {
+//     Symbol Symbol
+// }
 
 
 
@@ -227,7 +230,7 @@ type MetricParseResult struct {
 type MetricTag struct {
 	OID    string
 	MIB    string
-	Symbol string `yaml:"symbol"`
+	Symbol Symbol `yaml:"symbol"`
 	// simple tag
 	Tag string `yaml:"tag"`
 	// regex matching

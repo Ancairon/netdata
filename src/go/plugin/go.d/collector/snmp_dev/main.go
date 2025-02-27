@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -58,20 +59,20 @@ func main() {
 		if len(matchingProfiles) == 0 {
 			log.Printf("No matching profile found for sysObjectID: %s", sysObjectID)
 		}
-		fmt.Printf("found %v profile(s)\n", len(matchingProfiles))
 
 		metricMap := map[string]processedMetric{}
 
-		for name, profile := range matchingProfiles {
-			fmt.Println("Profile:", name)
-			fmt.Println("Profile Metrics",profile.Metrics, "\n\n\n")
+		for _, profile := range matchingProfiles {
+			// fmt.Println("Profile:", name)
+			fmt.Println("Profile Metrics")
+			spew.Dump(profile.Metrics)
+			fmt.Print("\n\n\n")
 
 			results := parseMetrics(profile.Metrics)
 			// fmt.Println(parseMetrics(profile.Metrics))
 			
 			for _, oid := range results.oids {
 				fmt.Println("OID:",oid)
-
 
 
 				response, err := SNMPGetExec(deviceIP, oid, "public")
@@ -109,6 +110,7 @@ func main() {
 
 			// walk OID subtree
 			for _, oid := range results.next_oids {
+				fmt.Println("IN THE LOOP")
 				// tables
 				if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
 					log.Fatalf("Error walking OID tree: %v", err)

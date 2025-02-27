@@ -63,24 +63,41 @@ func (s *SysObjectIDs) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // 	return nil
 // }
 
-func (s *SymbolOrString) UnmarshalYAML(value *yaml.Node) error {
-	// If it's a scalar, treat it as the Name.
-	if value.Kind == yaml.ScalarNode {
-		sym := Symbol{Name: value.Value}
-		fmt.Printf("Decoding as a symbol with only name: %+v\n", sym)
-		s.Symbol = sym
+// func (s *SymbolOrString) UnmarshalYAML(value *yaml.Node) error {
+// 	// If it's a scalar, treat it as the Name.
+// 	if value.Kind == yaml.ScalarNode {
+// 		sym := Symbol{Name: value.Value}
+// 		fmt.Printf("Decoding as a symbol with only name: %+v\n", sym)
+// 		s.Symbol = sym
+// 		return nil
+// 	}
+
+// 	// Decode into a temporary Symbol once.
+// 	var sym Symbol
+// 	err := value.Decode(&sym)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	// Log the decoded value.
+// 	fmt.Printf("Decoding as a symbol: %+v\n", sym)
+// 	s.Symbol = sym
+// 	return nil
+// }
+
+func (s *Symbol) UnmarshalYAML(node *yaml.Node) error {
+	// If it's a scalar node, assume the value is the name.
+	if node.Kind == yaml.ScalarNode {
+		s.Name = node.Value
 		return nil
 	}
 
-	// Decode into a temporary Symbol once.
-	var sym Symbol
-	err := value.Decode(&sym)
-	if err != nil {
+	// Otherwise, decode normally into a temporary type to avoid recursion.
+	type plainSymbol Symbol
+	var ps plainSymbol
+	if err := node.Decode(&ps); err != nil {
 		return err
 	}
-	// Log the decoded value.
-	fmt.Printf("Decoding as a symbol: %+v\n", sym)
-	s.Symbol = sym
+	*s = Symbol(ps)
 	return nil
 }
 

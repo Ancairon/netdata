@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"regexp"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 func parseMetrics(metrics []Metric) parseResult {
@@ -25,10 +28,8 @@ func parseMetrics(metrics []Metric) parseResult {
 			oids_to_resolve = append(oids_to_resolve, map[string]string{name: oid})
 		}
 
-		for _, index_mapping := range result.indexMappings {
-			// same as above
-			indexes_to_resolve = append(indexes_to_resolve, index_mapping)
-		}
+		// here in the python implementation a registration happens to their OIDResolver. I will not support this atm
+		indexes_to_resolve = append(indexes_to_resolve, result.indexMappings...)
 
 		for _, batch := range result.tableBatches {
 			should_query_in_bulk := bulk_threshold > 0 && len(batch.OIDs) > bulk_threshold
@@ -80,40 +81,165 @@ func parseMetric(metric Metric) MetricParseResult {
 	//         name: ifInErrors
 	// ```
 	castedStringMetricTags := []string{}
-	castedMetricTags := []TableMetricTag{}
+	castedTableMetricTags := []TableMetricTag{}
 	if len(metric.MetricTags) > 0 {
-
+		// fmt.Println("parseMetric MetricTags switch, have:")
+		// spew.Dump(metric.MetricTags)
+		// TODO investigate if there are metric tags and not only table metric tags
 		switch metric.MetricTags[0].(type) {
 		case string:
+			os.Exit(-40)
 			castedStringMetricTags = sliceToStrings(metric.MetricTags)
 
 		case MetricTag:
-			castedMetricTags = sliceToTableMetricTags(metric.MetricTags)
-
+			os.Exit(-40)
+			castedTableMetricTags = sliceToTableMetricTags(metric.MetricTags)
 		}
-	}
+		// case map[string]interface{} :
+		// 	for _,item := range metric.MetricTags{
+		// 		fmt.Println("ITEM", item, m)
+
+		// 	}
+		}
+			// 	oid, okOID := s["OID"].(string)
+		// name, okName := s["name"].(string)
+
+		// if !okOID || !okName {
+		// 	fmt.Errorf("invalid symbol format: %+v", s)
+		// 	return ParsedSymbol{}
+		// }
+
+		// return ParsedSymbol{
+		// 	Name:                name,
+		// 	OID:                 oid,
+		// 	ExtractValuePattern: nil,
+		// 	OIDsToResolve:       map[string]string{name: oid},
+		// }
+		// }
+	
 
 	fmt.Println(metric)
 	if len(metric.OID) > 0 {
 		// TODO investigate if this exists in the yamls
-		fmt.Printf("parseMetric/Parsing OID metric: %s\n", metric.Name)
+		// fmt.Printf("parseMetric/Parsing OID metric: %s\n", metric.Name)
 		return (parseOIDMetric(OIDMetric{Name: metric.Name, OID: metric.OID, MetricTags: castedStringMetricTags, ForcedType: metric.MetricType, Options: metric.Options}))
 	} else if len(metric.MIB) == 0 {
 		fmt.Errorf("Unsupported metric {%v}", metric)
-	} else if metric.Symbol != (SymbolOrString{}) {
+	} else if metric.Symbol != (Symbol{}) {
 		// single metric
-		fmt.Printf("parseMetric/Parsing Single Metric: %s\n", metric.Symbol)
+		// fmt.Printf("parseMetric/Parsing Single Metric: %s\n", metric.Symbol)
 
 		return (parseSymbolMetric(SymbolMetric{MIB: metric.MIB, Symbol: metric.Symbol, ForcedType: metric.MetricType, MetricTags: castedStringMetricTags, Options: metric.Options}))
 	} else if metric.Table != nil {
 		//table
-		fmt.Printf("parseMetric/Parsing Table: %s\n", metric.Table)
+		// fmt.Printf("parseMetric/Parsing Table: %s\n", metric.Table)
+
+		if len(metric.MetricTags) > 0 {
+			fmt.Println("parseMetric MetricTags switch, have:")
+			spew.Dump(metric.MetricTags)
+			for _,rawItem := range metric.MetricTags{
+				item, ok := rawItem.(map[string]interface{})
+    			if !ok {
+        		continue
+    			}
+				fmt.Println("ITEM", item["symbol"])
+				
+				var index int
+				if val, exists := item["Index"]; exists {
+					if i, ok := val.(int); ok {
+						index = i
+					} else {
+						index = -1
+					}
+				}
+
+				// For a mapping, you can simply check and assign.
+				var mapping map[int]string
+				if val, exists := item["Mapping"]; exists {
+					if m, ok := val.(map[int]string); ok {
+						mapping = m
+					}
+				}
+
+				// For a string value:
+				var tag string
+				if val, exists := item["Tag"]; exists {
+					if s, ok := val.(string); ok {
+						tag = s
+					}
+				}
+
+				// For Symbol, if you have your custom unmarshaler set up:
+				var symbol Symbol
+				if rawSymbol, exists := item["symbol"]; exists {
+					if symMap, ok := rawSymbol.(map[string]interface{}); ok {
+						var oid, name string
+				
+						if v, exists := symMap["OID"]; exists {
+							if oidStr, ok := v.(string); ok {
+								oid = oidStr
+							}
+						}
+				
+						if v, exists := symMap["name"]; exists {
+							if nameStr, ok := v.(string); ok {
+								name = nameStr
+							}
+						}
+				
+						symbol = Symbol{OID: oid, Name: name}
+					} else {
+						// Optionally handle the case where the type assertion fails.
+						fmt.Println("symbol is not a map[string]interface{}")
+					}
+				}
+
+				// For Table (assuming it's a string here):
+				var table string
+				if val, exists := item["Table"]; exists {
+					if s, ok := val.(string); ok {
+						table = s
+					} else {
+						table=""
+					}
+				}
+
+				// For Table (assuming it's a string here):
+				var mib string
+				if val, exists := item["MIB"]; exists {
+					if s, ok := val.(string); ok {
+						mib = s
+					} else {
+						mib=""
+					}
+				}
+
+				// For IndexTransform (assuming []IndexSlice is defined somewhere)
+				var indexTransform []IndexSlice
+				if val, exists := item["IndexTransform"]; exists {
+					if xs, ok := val.([]IndexSlice); ok {
+						indexTransform = xs
+					}
+				}
+
+				castedTableMetricTags = append(castedTableMetricTags, TableMetricTag{Index: index,Mapping: mapping,Tag: tag, MIB: mib,Symbol: symbol,Table: table,IndexTransform: indexTransform})
+					// oid, okOID := s["OID"].(string)
+					// name, okName := s["name"].(string)
+
+					// if !okOID || !okName {
+					// 	fmt.Errorf("invalid symbol format: %+v", s)
+					// 	return ParsedSymbol{}
+					// }
+
+
+				
+		}}
 
 		if metric.Symbols == nil {
 			fmt.Errorf("When specifying a table, you must specify a list of symbols %s", metric)
 		}
 
-		return (parseTableMetric(TableMetric{MIB: metric.MIB, Table: metric.Table, Symbols: metric.Symbols, ForcedType: metric.MetricType, MetricTags: castedMetricTags, Options: metric.Options}))
+		return (parseTableMetric(TableMetric{MIB: metric.MIB, Table: metric.Table, Symbols: metric.Symbols, ForcedType: metric.MetricType, MetricTags: castedTableMetricTags, Options: metric.Options}))
 
 	}
 	return MetricParseResult{}
@@ -211,7 +337,7 @@ func parseSymbolMetric(metric SymbolMetric) MetricParseResult {
 func parseTableMetric(metric TableMetric) MetricParseResult {
 
 	mib := metric.MIB
-	fmt.Printf("attempting to parse table with parseSymbol %s\n", metric.Table)
+	// fmt.Printf("attempting to parse table with parseSymbol %s\n", metric.Table)
 	parsed_table := parseSymbol(mib, metric.Table)
 	fmt.Printf("Parsed_table: %s\n", parsed_table)
 
@@ -222,14 +348,23 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 	var index_mappings []IndexMapping
 	var table_batches map[TableBatchKey]TableBatch
 
+	
+	
 	if metric.MetricTags != nil {
 		for _, metric_tag := range metric.MetricTags {
 			parsed_table_metric_tag := parseTableMetricTag(mib, parsed_table, metric_tag)
+			
+			// fmt.Println("====================raw parsedtablemetrictag inside parseTableMetric")
+			// spew.Dump(parsed_table_metric_tag)
 
 			if parsed_table_metric_tag.OIDsToResolve != nil {
 				oids_to_resolve = mergeStringMaps(oids_to_resolve, parsed_table_metric_tag.OIDsToResolve)
 
 				column_tags = append(column_tags, parsed_table_metric_tag.ColumnTags...)
+
+				fmt.Println("====================column_tags")
+				spew.Dump(column_tags)
+
 
 				table_batches = mergeTableBatches(table_batches, parsed_table_metric_tag.TableBatches)
 			} else {
@@ -242,13 +377,13 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 					}
 
 					for _, tag := range metric.MetricTags {
-						if reflect.DeepEqual(tag.Column, Symbol{}) {
+						if reflect.DeepEqual(tag.Symbol, Symbol{}) {
 							tag = TableMetricTag{
 								Tag:    tag.Tag,
-								Column: tag.Column,
+								Symbol: tag.Symbol,
 							}
 							index_mappings = append(index_mappings, IndexMapping{
-								Tag:     tag.Column.Name,
+								Tag:     tag.Symbol.Name,
 								Index:   index,
 								Mapping: mapping,
 							})
@@ -265,7 +400,10 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 	for _, symbol := range metric.Symbols {
 		parsed_symbol := parseSymbol(mib, symbol)
 
-		fmt.Printf("PARSED SYMBOL %s\n", parsed_symbol)
+		// fmt.Printf("PARSED SYMBOL\n")
+		// spew.Dump(parsed_symbol)
+		// fmt.Printf("\n\nINDEX TAGS\n")
+		// spew.Dump(column_tags)
 
 		for key, value := range parsed_symbol.OIDsToResolve {
 			oids_to_resolve[key] = value
@@ -283,7 +421,8 @@ func parseTableMetric(metric TableMetric) MetricParseResult {
 			baseoid:             parsed_symbol.OID,
 		}
 
-		fmt.Printf("PARSED TABLE METRIC %s\n", parsed_table_metric)
+		// fmt.Printf("PARSED TABLE METRIC\n")
+		// spew.Dump(parsed_table_metric)
 
 		parsed_metrics = append(parsed_metrics, parsed_table_metric)
 	}
@@ -360,7 +499,7 @@ metric_tags:
     ```
 */
 func parseTableMetricTag(mib string, parsed_table ParsedSymbol, metric_tag TableMetricTag) ParsedTableMetricTag {
-	if metric_tag.Column != (Symbol{}) {
+	if metric_tag.Symbol != (Symbol{}) {
 		metric_tag_mib := metric_tag.MIB
 
 		if metric_tag.Table != "" {
@@ -370,7 +509,9 @@ func parseTableMetricTag(mib string, parsed_table ParsedSymbol, metric_tag Table
 		if mib != metric_tag_mib {
 			fmt.Errorf("When tagging from a different MIB, the table must be specified")
 		}
-
+		fmt.Println("\n\n\n\nPARSECOLUMNMETRICTAG\n")
+		spew.Dump(parseColumnMetricTag(mib, parsed_table, metric_tag))
+		fmt.Println("END OF OUTPUT")
 		return parseColumnMetricTag(mib, parsed_table, metric_tag)
 	}
 
@@ -415,14 +556,17 @@ func parseOtherTableColumnMetricTag(mib string, table string, metric_tag TableMe
 }
 
 func parseColumnMetricTag(mib string, parsed_table ParsedSymbol, metric_tag TableMetricTag) ParsedTableMetricTag {
-	parsed_column := parseSymbol(mib, &metric_tag.Column)
+	parsed_column := parseSymbol(mib, metric_tag.Symbol)
+
+	// fmt.Println("PARSED COLUMN")
+	// spew.Dump(parsed_column)
 
 	batches := map[TableBatchKey]TableBatch{TableBatchKey{MIB: mib, Table: parsed_table.Name}: TableBatch{TableOID: parsed_table.OID, OIDs: []string{parsed_column.OID}}}
 
 	return ParsedTableMetricTag{
 		OIDsToResolve: parsed_column.OIDsToResolve,
-		ColumnTags: []ColumnTag{ColumnTag{
-			DEDUPParsedMetricTag: parseMetricTag(MetricTag{MIB: metric_tag.MIB, OID: "", Tag: metric_tag.Tag}),
+		ColumnTags: []ColumnTag{{
+			DEDUPParsedMetricTag: parseMetricTag(MetricTag{MIB: metric_tag.MIB, OID: "", Tag: metric_tag.Tag, Symbol: metric_tag.Symbol}),
 			Column:               parsed_column.Name,
 			IndexSlices:          parseIndexSlices(metric_tag),
 		},
@@ -543,26 +687,26 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 	// 	// return ParsedSymbol
 	// }
 
-	fmt.Printf("ParsingSymbol %s for MIB %s with type %s\n", symbol, mib, reflect.TypeOf(symbol))
+	// fmt.Printf("ParsingSymbol %s for MIB %s with type %s\n", symbol, mib, reflect.TypeOf(symbol))
 
 	switch s := symbol.(type) {
-	case SymbolOrString:
-		fmt.Printf("Symbol found\n")
-		oid := s.Symbol.OID
-		name := s.Symbol.Name
-		if s.Symbol.ExtractValue != "" {
-			extractValuePattern, err := regexp.Compile(s.Symbol.ExtractValue)
+	case Symbol:
+		// fmt.Printf("Symbol found\n")
+		oid := s.OID
+		name := s.Name
+		if s.ExtractValue != "" {
+			extractValuePattern, err := regexp.Compile(s.ExtractValue)
 			if err != nil {
 
 				return ParsedSymbol{}
 				// return "", fmt.Errorf("Failed to compile regular expression %q: %v", symbol.ExtractValue, err)
 			}
-			fmt.Printf("Returning regexcase %s", ParsedSymbol{
-				name,
-				oid,
-				extractValuePattern,
-				map[string]string{name: oid},
-			})
+			// fmt.Printf("Returning regexcase %s", ParsedSymbol{
+			// 	name,
+			// 	oid,
+			// 	extractValuePattern,
+			// 	map[string]string{name: oid},
+			// })
 			return ParsedSymbol{
 				name,
 				oid,
@@ -570,12 +714,12 @@ func parseSymbol(mib string, symbol interface{}) ParsedSymbol {
 				map[string]string{name: oid},
 			}
 		} else {
-			fmt.Printf("Returning %s\n", ParsedSymbol{
-				name,
-				oid,
-				nil,
-				map[string]string{name: oid},
-			})
+			// fmt.Printf("Returning %s\n", ParsedSymbol{
+			// 	name,
+			// 	oid,
+			// 	nil,
+			// 	map[string]string{name: oid},
+			// })
 			return ParsedSymbol{
 				name,
 				oid,
