@@ -26,17 +26,17 @@ func sliceToTableMetricTags(items []interface{}) []TableMetricTag {
 	return metricTag
 }
 
-func mergeTableBatches(target TableBatches, source TableBatches) TableBatches {
-	merged := TableBatches{}
+func mergeTableBatches(target tableBatches, source tableBatches) tableBatches {
+	merged := tableBatches{}
 
 	// Extend batches in `target` with OIDs from `source` that share the same key.
 	for key, batch := range target {
 
 		if srcBatch, ok := source[key]; ok {
-			mergedOids := append(batch.OIDs, srcBatch.OIDs...)
-			merged[key] = TableBatch{
-				TableOID: batch.TableOID,
-				OIDs:     mergedOids,
+			mergedOids := append(batch.oids, srcBatch.oids...)
+			merged[key] = tableBatch{
+				tableOID: batch.tableOID,
+				oids:     mergedOids,
 			}
 		}
 	}

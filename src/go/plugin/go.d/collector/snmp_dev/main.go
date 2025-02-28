@@ -70,10 +70,9 @@ func main() {
 
 			results := parseMetrics(profile.Metrics)
 			// fmt.Println(parseMetrics(profile.Metrics))
-			
-			for _, oid := range results.oids {
-				fmt.Println("OID:",oid)
 
+			for _, oid := range results.oids {
+				fmt.Println("OID:", oid)
 
 				response, err := SNMPGetExec(deviceIP, oid, "public")
 				if err != nil {
@@ -85,13 +84,13 @@ func main() {
 
 					for _, metric := range results.parsed_metrics {
 						switch s := metric.(type) {
-						case ParsedSymbolMetric:
+						case parsedSymbolMetric:
 							// fmt.Println("parsedsymbolmetric")
-							
+
 							if s.baseoid == oid {
 								fmt.Println("FOUND MATCH", s)
 
-								metricName := s.Name
+								metricName := s.name
 								metricSplit := strings.SplitN(strings.SplitN(response, " = ", 2)[1], ": ", 2)
 								if len(metricSplit) < 2 {
 									fmt.Print(metricSplit)
@@ -101,132 +100,43 @@ func main() {
 								metricValue := metricSplit[1]
 
 								fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-								
-								metricMap[oid] = processedMetric{OID: oid,name: metricName, Value: metricValue, metric_type: metricType}
+
+								metricMap[oid] = processedMetric{oid: oid, name: metricName, Value: metricValue, metric_type: metricType}
 							}
-						}}
-					
-			}
+						}
+					}
 
-			// walk OID subtree
-			for _, oid := range results.next_oids {
-				fmt.Println("IN THE LOOP")
-				// tables
-				if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
-					log.Fatalf("Error walking OID tree: %v", err)
-				} else {
-					fmt.Println(tableRows)
+				}
 
-					for _, metric := range results.parsed_metrics {
-						switch s := metric.(type) {
-						// case ParsedSymbolMetric:
-						// 	// fmt.Println("parsedsymbolmetric")
-						case ParsedTableMetric:
-							// fmt.Println("parsedtablemetric")
-							if s.baseoid == oid {
-								fmt.Println("FOUND MATCH", s)
+				// walk OID subtree
+				for _, oid := range results.next_oids {
+					// tables
+					if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
+						log.Fatalf("Error walking OID tree: %v", err)
+					} else {
+						for _, metric := range results.parsed_metrics {
+							switch s := metric.(type) {
+							case parsedTableMetric:
+								if s.baseoid == oid {
+									fmt.Println("FOUND MATCH", s)
 
-								for key, value := range tableRows {
-									value.name = s.Name
-									fmt.Println(value)
-									tableRows[key] = value
+									for key, value := range tableRows {
+										value.name = s.name
+										fmt.Println(value)
+										tableRows[key] = value
+									}
+
+									metricMap = mergeProcessedMetricMaps(metricMap, tableRows)
 								}
-
-								// fmt.Println(tableRows)
-								metricMap = mergeProcessedMetricMaps(metricMap, tableRows)
-								// os.Exit(16)
 							}
-						default:
-							fmt.Println("NONE OF THE TWO", s)
 						}
 					}
 				}
+
+				for _, value := range metricMap {
+					fmt.Println(value)
+				}
 			}
-
-			for _, value := range metricMap {
-				fmt.Println(value)
-			}
-			// 	if metric.Symbol != nil {
-			// 		// we have a symbol metric
-
-			// 		// parseSymbolMetric()
-
-			// 		// continue
-			// 		
-			// 		// }
-			// 	} else if metric.Table != nil {
-			// 		for _, symbol := range metric.Symbols {
-			// 			if len(symbol.OID) > 1 {
-			// 				// if it is a table we do a walk instead of a get
-			// 				response, err := SNMPWalkExec(deviceIP, symbol.OID, "public")
-			// 				if err != nil {
-			// 					log.Fatalf("SNMP Exec failed: %v", err)
-			// 				}
-
-			// 				if len(response) > 0 {
-			// 					// iterate through the response
-
-			// 					for _, response := range response {
-
-			// 						metric_type := response[0]
-			// 						metric_value := response[1]
-
-			// 						fmt.Print(metric_type, metric_value, "\n")
-
-			// 						fmt.Printf("METRIC: %s | %s | %s\n", symbol.Name, metric_type, metric_value)
-
-			// 					}
-			// 					os.Exit(129)
-			// 				}
-			// 			}
-			// 		}
-			// 		// fmt.Print("something")
-			// 	}
-			// if metric.Symbol != nil {
-			// 	val, ok := deviceData[metric.Symbol.OID]
-			// 	// If the key exists
-			// 	if ok {
-			// 		// Do something
-			// 		// you have the symbol found here
-
-			// 		metricName := metric.Symbol.Name
-			// 		metricSplit := strings.SplitN(val, ": ", 2)
-			// 		metricType := metricSplit[0]
-			// 		metricValue := metricSplit[1]
-
-			// 		fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-
-			// 	}
-			// 	// for key := range deviceData {
-			// 	// 	if strings.Contains(key, metric.Symbol.OID) {
-			// 	// 		fmt.Println("Found:", key)
-			// 	// 	}
-			// } else if metric.Table != nil {
-			// 	fmt.Print("TABLE FOUND\n")
-			// 	metricName := metric.Symbol.Name
-			// 	metricSplit := strings.SplitN(val, ": ", 2)
-			// 	metricType := metricSplit[0]
-			// 	metricValue := metricSplit[1]
-
-			// 	fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
-			// 	// os.Exit(19)
-
-			// }
-
-			// WalkOID(snmp, metric.Symbol.OID, metric.Symbol.Name, results)
-			// // 			// deviceDict["0"]["1"] = 1
-			// // 		} else if metric.Table != nil {
-			// // 			for _, sym := range metric.Symbols {
-			// // 				fmt.Printf("HERE %s\n", sym.OID)
-			// // 				// os.Exit(1)
-			// // 				// WalkOID(snmp, sym.OID, sym.Name, results)
-
-			// // 				// todo build a savable index here, and call the func to update it. The dict would be metric_name and value. it can be MIB.name and if it is a table an index I guess
-			// // 			}
-			// // 		}
-			// }
-			// }
 		}
 	}
-}
 }

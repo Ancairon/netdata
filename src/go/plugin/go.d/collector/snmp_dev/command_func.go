@@ -138,9 +138,9 @@ func walkOIDTree(target, community, baseOID string) (map[string]processedMetric,
 			}
 			fmt.Println("OID:", nextOID, "Value:", parts[2:])
 
-			fmt.Println(processedMetric{OID: nextOID, Value: parts[3], metric_type: parts[2]})
+			fmt.Println(processedMetric{oid: nextOID, Value: parts[3], metric_type: parts[2]})
 
-			tableRows[nextOID] = processedMetric{OID: nextOID, Value: parts[3], metric_type: strings.Replace(parts[2], ":", "", 1)}
+			tableRows[nextOID] = processedMetric{oid: nextOID, Value: parts[3], metric_type: strings.Replace(parts[2], ":", "", 1)}
 
 			currentOID = nextOID
 		} else {
