@@ -2,6 +2,7 @@
 
 #include "daemon-shutdown.h"
 #include "daemon-service.h"
+#include "daemon-status-file.h"
 #include "daemon/daemon-shutdown-watcher.h"
 #include "static_threads.h"
 #include "common.h"
@@ -25,6 +26,21 @@ void abort_on_fatal_enable(void) {
 void web_client_cache_destroy(void);
 
 extern struct netdata_static_thread *static_threads;
+
+void netdata_log_exit_reason(void) {
+    CLEAN_BUFFER *wb = buffer_create(0, NULL);
+    EXIT_REASON_2buffer(wb, exit_initiated, ", ");
+
+    ND_LOG_STACK lgs[] = {
+        ND_LOG_FIELD_UUID(NDF_MESSAGE_ID, &netdata_exit_msgid),
+        ND_LOG_FIELD_END(),
+    };
+    ND_LOG_STACK_PUSH(lgs);
+
+    nd_log(NDLS_DAEMON, is_exit_reason_normal(exit_initiated) ? NDLP_NOTICE : NDLP_CRIT,
+           "NETDATA SHUTDOWN: initializing shutdown with code due to: %s",
+           buffer_tostring(wb));
+}
 
 void cancel_main_threads(void) {
     nd_log_limits_unlimited();
@@ -146,20 +162,31 @@ static void rrdeng_flush_everything_and_wait(bool wait_flush, bool wait_collecto
 }
 #endif
 
-void netdata_cleanup_and_exit(int ret, const char *action, const char *action_result, const char *action_data) {
-    netdata_exit = 1;
+void netdata_cleanup_and_exit(EXIT_REASON reason, const char *action, const char *action_result, const char *action_data) {
+    exit_initiated_set(reason);
+    int ret = is_exit_reason_normal(exit_initiated) ? 0 : 1;
+
+    // don't recurse (due to a fatal, while exiting)
+    static bool run = false;
+    if(run) {
+        nd_log(NDLS_DAEMON, NDLP_ERR, "EXIT: Recursion detected. Exiting immediately.");
+        exit(ret);
+    }
+    run = true;
+    daemon_status_file_update_status(DAEMON_STATUS_EXITING);
+
+    nd_log_limits_unlimited();
+    netdata_log_exit_reason();
+
+    watcher_thread_start();
+    usec_t shutdown_start_time = now_monotonic_usec();
+    watcher_shutdown_begin();
 
 #ifdef ENABLE_DBENGINE
     if(!ret && dbengine_enabled)
         // flush all dirty pages asap
         rrdeng_flush_everything_and_wait(false, false);
 #endif
-
-    usec_t shutdown_start_time = now_monotonic_usec();
-    watcher_shutdown_begin();
-
-    nd_log_limits_unlimited();
-    netdata_log_info("NETDATA SHUTDOWN: initializing shutdown with code %d...", ret);
 
     // send the stat from our caller
     analytics_statistic_t statistic = { action, action_result, action_data };
@@ -169,26 +196,17 @@ void netdata_cleanup_and_exit(int ret, const char *action, const char *action_re
     statistic = (analytics_statistic_t) {"EXIT", ret?"ERROR":"OK","-"};
     analytics_statistic_send(&statistic);
 
-    char agent_crash_file[FILENAME_MAX + 1];
-    char agent_incomplete_shutdown_file[FILENAME_MAX + 1];
-    snprintfz(agent_crash_file, FILENAME_MAX, "%s/.agent_crash", netdata_configured_varlib_dir);
-    snprintfz(agent_incomplete_shutdown_file, FILENAME_MAX, "%s/.agent_incomplete_shutdown", netdata_configured_varlib_dir);
-    (void) rename(agent_crash_file, agent_incomplete_shutdown_file);
-    watcher_step_complete(WATCHER_STEP_ID_CREATE_SHUTDOWN_FILE);
-
     netdata_main_spawn_server_cleanup();
     watcher_step_complete(WATCHER_STEP_ID_DESTROY_MAIN_SPAWN_SERVER);
-
-    watcher_step_complete(WATCHER_STEP_ID_DBENGINE_EXIT_MODE);
 
     webrtc_close_all_connections();
     watcher_step_complete(WATCHER_STEP_ID_CLOSE_WEBRTC_CONNECTIONS);
 
     service_signal_exit(SERVICE_MAINTENANCE | ABILITY_DATA_QUERIES | ABILITY_WEB_REQUESTS |
-                        ABILITY_STREAMING_CONNECTIONS | SERVICE_ACLK);
+                        ABILITY_STREAMING_CONNECTIONS | SERVICE_ACLK | SERVICE_SYSTEMD);
     watcher_step_complete(WATCHER_STEP_ID_DISABLE_MAINTENANCE_NEW_QUERIES_NEW_WEB_REQUESTS_NEW_STREAMING_CONNECTIONS_AND_ACLK);
 
-    service_wait_exit(SERVICE_MAINTENANCE, 3 * USEC_PER_SEC);
+    service_wait_exit(SERVICE_MAINTENANCE | SERVICE_SYSTEMD, 3 * USEC_PER_SEC);
     watcher_step_complete(WATCHER_STEP_ID_STOP_MAINTENANCE_THREAD);
 
     service_wait_exit(SERVICE_EXPORTERS | SERVICE_HEALTH | SERVICE_WEB_SERVER | SERVICE_HTTPD, 3 * USEC_PER_SEC);
@@ -294,12 +312,12 @@ void netdata_cleanup_and_exit(int ret, const char *action, const char *action_re
     netdata_ssl_cleanup();
     watcher_step_complete(WATCHER_STEP_ID_FREE_OPENSSL_STRUCTURES);
 
-    (void) unlink(agent_incomplete_shutdown_file);
-    watcher_step_complete(WATCHER_STEP_ID_REMOVE_INCOMPLETE_SHUTDOWN_FILE);
-
     watcher_shutdown_end();
     watcher_thread_stop();
     curl_global_cleanup();
+
+    daemon_status_file_shutdown_step(NULL);
+    daemon_status_file_update_status(DAEMON_STATUS_EXITED);
 
 #ifdef OS_WINDOWS
     return;
@@ -316,6 +334,9 @@ void netdata_cleanup_and_exit(int ret, const char *action, const char *action_re
         exit(ret);
     }
 #else
-    exit(ret);
+    if(ret)
+        _exit(ret);
+    else
+        exit(ret);
 #endif
 }

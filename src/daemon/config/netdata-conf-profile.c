@@ -31,13 +31,14 @@ ND_PROFILE nd_profile_detect_and_configure(bool recheck) {
 
     // required for detecting the profile
     stream_conf_load();
+    netdata_conf_section_directories();
 
     ND_PROFILE def_profile = ND_PROFILE_NONE;
 
     OS_SYSTEM_MEMORY mem = os_system_memory(true);
     size_t cpus = os_get_system_cpus_uncached();
 
-    if(cpus <= 1 || (mem.ram_total_bytes && mem.ram_total_bytes < 1ULL * 1024 * 1024 * 1024))
+    if(cpus <= 1 || (OS_SYSTEM_MEMORY_OK(mem) && mem.ram_total_bytes < 1ULL * 1024 * 1024 * 1024))
         def_profile = ND_PROFILE_IOT;
 
     else if(stream_conf_is_parent(true))
@@ -94,9 +95,7 @@ ND_PROFILE nd_profile_detect_and_configure(bool recheck) {
 struct nd_profile_t nd_profile = { 0 };
 
 void nd_profile_setup(void) {
-    static bool run = false;
-    if(run) return;
-    run = true;
+    FUNCTION_RUN_ONCE();
 
     ND_PROFILE profile = nd_profile_detect_and_configure(true); (void)profile;
     if(netdata_conf_is_iot()) {
@@ -105,6 +104,7 @@ void nd_profile_setup(void) {
         nd_profile.malloc_arenas = 1;
         nd_profile.malloc_trim = 32 * 1024;
         nd_profile.stream_sender_compression = ND_COMPRESSION_FASTEST;
+        nd_profile.dbengine_journal_v2_unmount_time = 120;
         // web server threads = 6
         // aclk query threads = 6
         // backfill threads = 0
@@ -118,9 +118,10 @@ void nd_profile_setup(void) {
     else if(netdata_conf_is_parent()) {
         nd_profile.storage_tiers = 3;
         nd_profile.update_every = 1;
-        nd_profile.malloc_arenas = 1;
+        nd_profile.malloc_arenas = 4;
         nd_profile.malloc_trim = 128 * 1024;
         nd_profile.stream_sender_compression = ND_COMPRESSION_FASTEST;
+        nd_profile.dbengine_journal_v2_unmount_time = 0;
         // web server threads = dynamic
         // aclk query threads = dynamic
         // backfill threads = dynamic
@@ -134,6 +135,7 @@ void nd_profile_setup(void) {
         nd_profile.malloc_arenas = 1;
         nd_profile.malloc_trim = 32 * 1024;
         nd_profile.stream_sender_compression = ND_COMPRESSION_DEFAULT;
+        nd_profile.dbengine_journal_v2_unmount_time = 120;
         // web server threads = 6
         // aclk query threads = 6
         // backfill threads = 0
@@ -147,6 +149,7 @@ void nd_profile_setup(void) {
         nd_profile.malloc_arenas = 1;
         nd_profile.malloc_trim = 64 * 1024;
         nd_profile.stream_sender_compression = ND_COMPRESSION_DEFAULT;
+        nd_profile.dbengine_journal_v2_unmount_time = 120;
         // web server threads = 6
         // aclk query threads = 6
         // backfill threads = 0

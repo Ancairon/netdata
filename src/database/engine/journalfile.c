@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "rrdengine.h"
 
+
+// the default value is set in ND_PROFILE, not here
+time_t dbengine_journal_v2_unmount_time = 120;
+
 /* Careful to always call this before creating a new journal file */
 void journalfile_v1_extent_write(struct rrdengine_instance *ctx, struct rrdengine_datafile *datafile, WAL *wal)
 {
@@ -210,6 +214,8 @@ static struct journal_v2_header *journalfile_v2_mounted_data_get(struct rrdengin
 
             madvise_dontfork(journalfile->mmap.data, journalfile->mmap.size);
             madvise_dontdump(journalfile->mmap.data, journalfile->mmap.size);
+            // madvise_dontneed(journalfile->mmap.data, journalfile->mmap.size);
+            madvise_random(journalfile->mmap.data, journalfile->mmap.size);
 
             spinlock_lock(&journalfile->v2.spinlock);
             journalfile->v2.flags |= JOURNALFILE_FLAG_IS_AVAILABLE | JOURNALFILE_FLAG_IS_MOUNTED;
@@ -219,11 +225,6 @@ static struct journal_v2_header *journalfile_v2_mounted_data_get(struct rrdengin
             if(flags & JOURNALFILE_FLAG_MOUNTED_FOR_RETENTION) {
                 // we need the entire metrics directory into memory to process it
                 madvise_willneed(journalfile->mmap.data, journalfile->v2.size_of_directory);
-            }
-            else {
-                // let the kernel know that we don't want read-ahead on this file
-                madvise_random(journalfile->mmap.data, journalfile->mmap.size);
-                // madvise_dontneed(journalfile->mmap.data, journalfile->mmap.size);
             }
         }
     }
@@ -312,8 +313,9 @@ void journalfile_v2_data_unmount_cleanup(time_t now_s) {
                 if (!journalfile->v2.not_needed_since_s)
                     journalfile->v2.not_needed_since_s = now_s;
 
-                else if (now_s - journalfile->v2.not_needed_since_s >= 120)
-                    // 2 minutes have passed since last use
+                else if (
+                    dbengine_journal_v2_unmount_time && now_s - journalfile->v2.not_needed_since_s >= dbengine_journal_v2_unmount_time)
+                    // enough time has passed since we last needed this journal
                     unmount = true;
             }
             spinlock_unlock(&journalfile->v2.spinlock);
@@ -580,10 +582,7 @@ int journalfile_create(struct rrdengine_journalfile *journalfile, struct rrdengi
     journalfile->file = file;
     __atomic_add_fetch(&ctx->stats.journalfile_creations, 1, __ATOMIC_RELAXED);
 
-    ret = posix_memalign((void *)&superblock, RRDFILE_ALIGNMENT, sizeof(*superblock));
-    if (unlikely(ret)) {
-        fatal("DBENGINE: posix_memalign:%s", strerror(ret));
-    }
+    (void)posix_memalignz((void *)&superblock, RRDFILE_ALIGNMENT, sizeof(*superblock));
     memset(superblock, 0, sizeof(*superblock));
     (void) strncpy(superblock->magic_number, RRDENG_JF_MAGIC, RRDENG_MAGIC_SZ);
     (void) strncpy(superblock->version, RRDENG_JF_VER, RRDENG_VER_SZ);
@@ -597,7 +596,7 @@ int journalfile_create(struct rrdengine_journalfile *journalfile, struct rrdengi
         ctx_io_error(ctx);
     }
     uv_fs_req_cleanup(&req);
-    posix_memfree(superblock);
+    posix_memalign_freez(superblock);
     if (ret < 0) {
         journalfile_destroy_unsafe(journalfile, datafile);
         return ret;
@@ -617,10 +616,7 @@ static int journalfile_check_superblock(uv_file file)
     uv_buf_t iov;
     uv_fs_t req;
 
-    ret = posix_memalign((void *)&superblock, RRDFILE_ALIGNMENT, sizeof(*superblock));
-    if (unlikely(ret)) {
-        fatal("DBENGINE: posix_memalign:%s", strerror(ret));
-    }
+    (void)posix_memalignz((void *)&superblock, RRDFILE_ALIGNMENT, sizeof(*superblock));
     iov = uv_buf_init((void *)superblock, sizeof(*superblock));
 
     ret = uv_fs_read(NULL, &req, file, &iov, 1, 0, NULL);
@@ -643,7 +639,7 @@ static int journalfile_check_superblock(uv_file file)
         ret = 0;
     }
     error:
-    posix_memfree(superblock);
+        posix_memalign_freez(superblock);
     return ret;
 }
 
@@ -813,9 +809,7 @@ static uint64_t journalfile_iterate_transactions(struct rrdengine_instance *ctx,
     file_size = journalfile->unsafe.pos;
 
     max_id = 1;
-    ret = posix_memalign((void *)&buf, RRDFILE_ALIGNMENT, READAHEAD_BYTES);
-    if (unlikely(ret))
-        fatal("DBENGINE: posix_memalign:%s", strerror(ret));
+    (void)posix_memalignz((void *)&buf, RRDFILE_ALIGNMENT, READAHEAD_BYTES);
 
     for (pos = sizeof(struct rrdeng_jf_sb); pos < file_size; pos += READAHEAD_BYTES) {
         size_bytes = MIN(READAHEAD_BYTES, file_size - pos);
@@ -844,7 +838,7 @@ static uint64_t journalfile_iterate_transactions(struct rrdengine_instance *ctx,
         }
     }
 skip_file:
-    posix_memfree(buf);
+    posix_memalign_freez(buf);
     return max_id;
 }
 

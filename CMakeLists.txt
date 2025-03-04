@@ -268,6 +268,41 @@ if(ENABLE_MIMALLOC)
         netdata_add_mimalloc()
 endif()
 
+option(ENABLE_JEMALLOC "Disable jemalloc allocator" OFF)
+
+if(ENABLE_JEMALLOC)
+    pkg_check_modules(JEMALLOC QUIET jemalloc)
+    if(JEMALLOC_FOUND)
+        # Check if jemalloc has arena API
+        set(CMAKE_REQUIRED_INCLUDES ${JEMALLOC_INCLUDE_DIRS})
+        set(CMAKE_REQUIRED_LIBRARIES ${JEMALLOC_LIBRARIES})
+        check_c_source_compiles("
+            #include <jemalloc/jemalloc.h>
+            int main() {
+                unsigned narenas;
+                size_t sz = sizeof(narenas);
+                mallctl(\"arenas.narenas\", &narenas, &sz, NULL, 0);
+                return 0;
+            }
+        " HAVE_JEMALLOC_ARENA_API)
+
+        if(HAVE_JEMALLOC_ARENA_API)
+            set(ENABLE_JEMALLOC ON CACHE BOOL "Enable jemalloc allocator" FORCE)
+            message(STATUS "Jemalloc found with arena API support - enabling")
+        else()
+            if(ENABLE_JEMALLOC)
+                message(FATAL_ERROR "Jemalloc was found but does not have arena API support")
+            endif()
+            message(STATUS "Jemalloc found but does not have arena API support - disabling")
+        endif()
+    else()
+        if(ENABLE_JEMALLOC)
+            message(FATAL_ERROR "Jemalloc support was explicitly enabled but jemalloc was not found")
+        endif()
+        message(STATUS "Jemalloc not found - disabling")
+    endif()
+endif()
+
 if(ENABLE_PLUGIN_GO)
     include(NetdataGoTools)
 
@@ -449,12 +484,31 @@ check_function_exists(arc4random_uniform HAVE_ARC4RANDOM_UNIFORM)
 check_function_exists(getrandom HAVE_GETRANDOM)
 check_function_exists(sysinfo HAVE_SYSINFO)
 
+check_function_exists(timegm HAVE_TIMEGM)
+
+# Add -rdynamic when backtrace is available but libunwind is not
+if(HAVE_BACKTRACE AND NOT ENABLE_LIBUNWIND AND NOT STATIC_BUILD)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_link_options(-rdynamic)
+        message(STATUS "Adding -rdynamic to link options for better backtrace support")
+    endif()
+endif()
+
 #
 # check source compilation
 #
 
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
+
+check_c_source_compiles("
+#include <time.h>
+int main(void) {
+    struct tm t;
+    (void)t.tm_gmtoff;
+    return 0;
+}
+" HAVE_TM_GMTOFF)
 
 set(CMAKE_REQUIRED_LIBRARIES pthread)
 check_c_source_compiles("
@@ -984,7 +1038,7 @@ set(LIBNETDATA_FILES
         src/libnetdata/locks/benchmark.h
         src/libnetdata/locks/benchmark-rw.c
         src/libnetdata/locks/benchmark-rw.h
-        src/libnetdata/log/nd_log-libunwind.c
+        src/libnetdata/log/nd_log-stacktrace.c
         src/libnetdata/memory/nd-mallocz.c
         src/libnetdata/memory/nd-mallocz.h
         src/libnetdata/memory/nd-mmap.c
@@ -994,6 +1048,24 @@ set(LIBNETDATA_FILES
         src/libnetdata/os/get_system_pagesize.h
         src/libnetdata/os/hostname.c
         src/libnetdata/os/hostname.h
+        src/libnetdata/exit/exit_initiated.c
+        src/libnetdata/exit/exit_initiated.h
+        src/libnetdata/os/disk_space.c
+        src/libnetdata/os/disk_space.h
+        src/libnetdata/os/file_metadata.c
+        src/libnetdata/os/file_metadata.h
+        src/libnetdata/os/process_path.c
+        src/libnetdata/os/process_path.h
+        src/libnetdata/os/boottime.c
+        src/libnetdata/os/boottime.h
+        src/libnetdata/os/boot_id.c
+        src/libnetdata/os/boot_id.h
+        src/libnetdata/os/run_dir.c
+        src/libnetdata/os/run_dir.h
+        src/libnetdata/os/file_lock.c
+        src/libnetdata/os/file_lock.h
+        src/libnetdata/os/mmap_limit.c
+        src/libnetdata/os/mmap_limit.h
 )
 
 list(APPEND LIBNETDATA_FILES ${INICFG_FILES})
@@ -1182,8 +1254,12 @@ set(DAEMON_FILES
         src/daemon/pulse/pulse-db-dbengine-retention.h
         src/daemon/pulse/pulse-parents.c
         src/daemon/pulse/pulse-parents.h
+        src/daemon/daemon-status-file.c
+        src/daemon/daemon-status-file.h
         src/daemon/config/netdata-conf-ssl.c
         src/daemon/config/netdata-conf-ssl.h
+        src/daemon/daemon-systemd-watcher.c
+        src/daemon/daemon-systemd-watcher.h
 )
 
 set(H2O_FILES
@@ -1674,6 +1750,8 @@ set(WEB_PLUGIN_FILES
         src/web/api/queries/backfill.h
         src/web/api/functions/function-metrics-cardinality.c
         src/web/api/functions/function-metrics-cardinality.h
+        src/web/api/request_source.c
+        src/web/api/request_source.h
 )
 
 set(CLAIM_PLUGIN_FILES
@@ -2168,6 +2246,13 @@ netdata_add_jsonc_to_target(libnetdata)
 
 netdata_add_libyaml_to_target(libnetdata)
 
+# jemalloc
+if(ENABLE_JEMALLOC)
+    target_link_libraries(libnetdata PUBLIC ${JEMALLOC_LIBRARIES})
+    target_include_directories(libnetdata PUBLIC ${JEMALLOC_INCLUDE_DIRS})
+    target_compile_options(libnetdata PUBLIC ${JEMALLOC_CFLAGS_OTHER})
+endif()
+
 # libunwind
 if(ENABLE_LIBUNWIND)
   pkg_check_modules(LIBUNWIND libunwind IMPORTED_TARGET)
@@ -2177,7 +2262,7 @@ if(ENABLE_LIBUNWIND)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(amd64)")
       target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-x86_64)
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^i?.86")
-      target_link_libraries(libnetdata PUBLIC PkgCOnfig::LIBUNWIND -lunwind-x86)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-x86)
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(arm64)|(aarch64)")
       target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-aarch64)
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
