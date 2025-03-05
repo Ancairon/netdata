@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 func parseMetrics(metrics []Metric) parsedResult {
@@ -99,7 +97,7 @@ func parseMetric(metric Metric) metricParseResult {
 		// }
 	}
 
-	fmt.Println(metric)
+	// fmt.Println(metric)
 	if len(metric.OID) > 0 {
 		// TODO investigate if this exists in the yamls
 		// fmt.Printf("parseMetric/Parsing OID metric: %s\n", metric.Name)
@@ -116,8 +114,8 @@ func parseMetric(metric Metric) metricParseResult {
 		// fmt.Printf("parseMetric/Parsing Table: %s\n", metric.Table)
 
 		if len(metric.MetricTags) > 0 {
-			fmt.Println("parseMetric MetricTags switch, have:")
-			spew.Dump(metric.MetricTags)
+			// fmt.Println("parseMetric MetricTags switch, have:")
+			// spew.Dump(metric.MetricTags)
 			/*// for _, rawItem := range metric.MetricTags {
 			// 	item, ok := rawItem.(map[string]interface{})
 			// 	if !ok {
@@ -280,13 +278,13 @@ func parseSymbolMetric(metric symbolMetric) metricParseResult {
 		extractValuePattern: parsed_symbol.extractValuePattern,
 		baseoid:             parsed_symbol.oid,
 	}
-	fmt.Println("parseSymbolMetric metric parsed result:", metricParseResult{
-		oidsToFetch:   []string{parsed_symbol.oid},
-		oidsToResolve: parsed_symbol.oidsToResolve,
-		parsedMetrics: []parsedMetric{parsed_symbol_metric},
-		tableBatches:  nil,
-		indexMappings: nil,
-	})
+	// fmt.Println("parseSymbolMetric metric parsed result:", metricParseResult{
+	// 	oidsToFetch:   []string{parsed_symbol.oid},
+	// 	oidsToResolve: parsed_symbol.oidsToResolve,
+	// 	parsedMetrics: []parsedMetric{parsed_symbol_metric},
+	// 	tableBatches:  nil,
+	// 	indexMappings: nil,
+	// })
 
 	return metricParseResult{
 		oidsToFetch:   []string{parsed_symbol.oid},
@@ -304,7 +302,11 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 	mib := metric.mib
 	// fmt.Printf("attempting to parse table with parseSymbol %s\n", metric.Table)
 	parsed_table := parseSymbol(mib, metric.table)
-	fmt.Printf("Parsed_table: %s\n", parsed_table)
+
+	table_name := parsed_table.name
+	table_oid := parsed_table.oid
+
+	fmt.Printf("Parsed_table: %s %s\n", table_name, table_oid)
 
 	oids_to_resolve := parsed_table.oidsToResolve
 
@@ -325,8 +327,8 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 
 				column_tags = append(column_tags, parsed_table_metric_tag.columnTags...)
 
-				fmt.Println("====================column_tags")
-				spew.Dump(column_tags)
+				// fmt.Println("====================column_tags")
+				// spew.Dump(column_tags)
 
 				table_batches = mergeTableBatches(table_batches, parsed_table_metric_tag.tableBatches)
 			} else {
@@ -380,7 +382,9 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 			forcedType:          metric.forcedType,
 			options:             metric.options,
 			extractValuePattern: parsed_symbol.extractValuePattern,
-			baseoid:             parsed_symbol.oid,
+			rowOID:              parsed_symbol.oid,
+			tableName:           table_name,
+			tableOID:            table_oid,
 		}
 
 		// fmt.Printf("PARSED TABLE METRIC\n")
@@ -471,9 +475,9 @@ func parseTableMetricTag(mib string, parsed_table parsedSymbol, metric_tag Table
 		if mib != metric_tag_mib {
 			fmt.Errorf("When tagging from a different MIB, the table must be specified")
 		}
-		fmt.Println("\n\n\n\nPARSECOLUMNMETRICTAG\n")
-		spew.Dump(parseColumnMetricTag(mib, parsed_table, metric_tag))
-		fmt.Println("END OF OUTPUT")
+		// fmt.Println("\n\n\n\nPARSECOLUMNMETRICTAG\n")
+		// spew.Dump(parseColumnMetricTag(mib, parsed_table, metric_tag))
+		// fmt.Println("END OF OUTPUT")
 		return parseColumnMetricTag(mib, parsed_table, metric_tag)
 	}
 

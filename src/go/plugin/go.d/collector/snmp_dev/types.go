@@ -1,6 +1,16 @@
 package main
 
-import "regexp"
+import (
+	"regexp"
+
+	"github.com/gosnmp/gosnmp"
+)
+
+type snmpPDU struct {
+	value interface{}
+	oid string
+	metric_type gosnmp.Asn1BER
+}
 
 // Profile represents the structure of a Datadog SNMP profile.
 type Profile struct {
@@ -179,7 +189,9 @@ type parsedTableMetric struct {
 	forcedType          string
 	options             map[string]string
 	extractValuePattern *regexp.Regexp
-	baseoid             string
+	rowOID             string
+	tableName string
+	tableOID string
 }
 
 // union of two above
@@ -240,6 +252,7 @@ type IndexSlice struct {
 type processedMetric struct {
 	oid         string
 	name        string
-	Value       string
-	metric_type string
+	value       interface{}
+	metric_type gosnmp.Asn1BER
+	tableName string
 }

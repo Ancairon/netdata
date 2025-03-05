@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -47,7 +45,7 @@ func main() {
 		}
 		defer snmp.Conn.Close()
 
-		fmt.Println("Fetching sysObjectID...")
+		// fmt.Println("Fetching sysObjectID...")
 		sysObjectID, err := GetSysObjectID(snmp)
 		if err != nil {
 			log.Printf("Failed to get sysObjectID for %s: %v\n", deviceIP, err)
@@ -64,23 +62,24 @@ func main() {
 
 		for _, profile := range matchingProfiles {
 			// fmt.Println("Profile:", name)
-			fmt.Println("Profile Metrics")
-			spew.Dump(profile.Metrics)
-			fmt.Print("\n\n\n")
+			// fmt.Println("Profile Metrics")
+			// spew.Dump(profile.Metrics)
+			// fmt.Print("\n\n\n")
 
 			results := parseMetrics(profile.Metrics)
 			// fmt.Println(parseMetrics(profile.Metrics))
 
 			for _, oid := range results.oids {
-				fmt.Println("OID:", oid)
+				// fmt.Println("OID:", oid)
 
-				response, err := SNMPGetExec(deviceIP, oid, "public")
+				response, err := SNMPGet(deviceIP, oid, "public")
 				if err != nil {
 					log.Fatalf("SNMP Exec failed: %v", err)
 				}
 
-				if len(response) > 0 {
-					fmt.Println(response)
+				if (response != snmpPDU{}) {
+
+					// fmt.Println(response)
 
 					for _, metric := range results.parsed_metrics {
 						switch s := metric.(type) {
@@ -88,54 +87,66 @@ func main() {
 							// fmt.Println("parsedsymbolmetric")
 
 							if s.baseoid == oid {
-								fmt.Println("FOUND MATCH", s)
+								fmt.Println("FOUND MATCH", s, response)
 
 								metricName := s.name
-								metricSplit := strings.SplitN(strings.SplitN(response, " = ", 2)[1], ": ", 2)
-								if len(metricSplit) < 2 {
-									fmt.Print(metricSplit)
-									os.Exit(-9324)
-								}
-								metricType := metricSplit[0]
-								metricValue := metricSplit[1]
+								metricType := response.metric_type
+								metricValue := response.value
 
 								fmt.Printf("METRIC: %s | %s | %s\n", metricName, metricType, metricValue)
 
-								metricMap[oid] = processedMetric{oid: oid, name: metricName, Value: metricValue, metric_type: metricType}
+								metricMap[oid] = processedMetric{oid: oid, name: metricName, value: metricValue, metric_type: metricType}
 							}
 						}
 					}
 
 				}
+			}
 
-				// walk OID subtree
-				for _, oid := range results.next_oids {
-					// tables
-					if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
-						log.Fatalf("Error walking OID tree: %v", err)
-					} else {
-						for _, metric := range results.parsed_metrics {
-							switch s := metric.(type) {
-							case parsedTableMetric:
-								if s.baseoid == oid {
-									fmt.Println("FOUND MATCH", s)
+			for _, oid := range results.next_oids {
 
-									for key, value := range tableRows {
-										value.name = s.name
-										fmt.Println(value)
-										tableRows[key] = value
-									}
+				spew.Dump(oid)
 
-									metricMap = mergeProcessedMetricMaps(metricMap, tableRows)
+				if len(oid) < 1 {
+					fmt.Println("empty OID, skipping", oid)
+					continue
+				}
+				if tableRows, err := walkOIDTree(deviceIP, community, oid); err != nil {
+					log.Fatalf("Error walking OID tree: %v, oid %s", err, oid)
+				} else {
+					for _, metric := range results.parsed_metrics {
+						switch s := metric.(type) {
+						case parsedTableMetric:
+							if s.rowOID == oid {
+								// fmt.Println("FOUND MATCH", s)
+
+
+								fmt.Println(tableRows)
+
+								for key, value := range tableRows {
+									value.name = s.name
+									value.tableName = s.tableName
+									// fmt.Println(value)
+									tableRows[key] = value
+
 								}
+
+
+								metricMap = mergeProcessedMetricMaps(metricMap, tableRows)
 							}
+							// case parsedSymbolMetric:
+							// 	fmt.Println(s,oid)
+							// 	if s.baseoid == oid {
+							// 	}
 						}
 					}
 				}
 
-				for _, value := range metricMap {
-					fmt.Println(value)
-				}
+			}
+
+			for _, value := range metricMap {
+				// fmt.Println(value)
+				spew.Dump(value)
 			}
 		}
 	}
