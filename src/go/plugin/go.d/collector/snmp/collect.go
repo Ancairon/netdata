@@ -5,6 +5,7 @@ package snmp
 import (
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -16,6 +17,33 @@ import (
 )
 
 func (c *Collector) collect() (map[string]int64, error) {
+
+	// load the sysobjectid
+	sysObjectID, err := c.getSysObjectID(snmpsd.OidSysObject)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load all profiles
+	profiles, err := LoadAllProfiles(c.profileDir)
+	if err != nil {
+		return nil, err
+	}
+
+	matchingProfiles := FindMatchingProfiles(profiles, sysObjectID)
+	if len(matchingProfiles) == 0 {
+		log.Printf("No matching profile found for sysObjectID: %s", sysObjectID)
+	}
+
+	metricMap, err := c.parseMetricsFromProfiles(matchingProfiles)
+	if err != nil {
+		return nil, err
+	}
+
+	mx := make(map[string]int64)
+
+	c.makeChartsFromMetricMap(mx, metricMap)
+
 	if c.sysInfo == nil {
 		si, err := snmpsd.GetSysInfo(c.snmpClient)
 		if err != nil {
@@ -30,25 +58,50 @@ func (c *Collector) collect() (map[string]int64, error) {
 		}
 	}
 
-	mx := make(map[string]int64)
+	// if err := c.collectSysUptime(mx); err != nil {
+	// 	return nil, err
+	// }
 
-	if err := c.collectSysUptime(mx); err != nil {
-		return nil, err
-	}
+	// if c.collectIfMib {
+	// 	if err := c.collectNetworkInterfaces(mx); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
-	if c.collectIfMib {
-		if err := c.collectNetworkInterfaces(mx); err != nil {
-			return nil, err
-		}
-	}
-
-	if len(c.customOids) > 0 {
-		if err := c.collectOIDs(mx); err != nil {
-			return nil, err
-		}
-	}
+	// if len(c.customOids) > 0 {
+	// 	if err := c.collectOIDs(mx); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	return mx, nil
+}
+
+func (c *Collector) getSysObjectID(oid string) (string, error) {
+	resp, err := c.snmpClient.Get([]string{oid})
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Replace(resp.Variables[0].Value.(string), ".", "", 1), nil
+}
+
+func (c *Collector) makeChartsFromMetricMap(mx map[string]int64, metricMap map[string]processedMetric) error {
+
+	for _, metric := range metricMap {
+		if metric.tableName == "" {
+			switch s := metric.value.(type) {
+			case int:
+
+				// log.Println(metric)
+				
+				c.addSNMPChart(metric)
+				mx[metric.name] = int64(s)
+
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Collector) collectSysUptime(mx map[string]int64) error {
