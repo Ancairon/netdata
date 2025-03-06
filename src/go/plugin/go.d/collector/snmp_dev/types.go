@@ -7,8 +7,8 @@ import (
 )
 
 type snmpPDU struct {
-	value interface{}
-	oid string
+	value       interface{}
+	oid         string
 	metric_type gosnmp.Asn1BER
 }
 
@@ -45,7 +45,7 @@ type Metric struct {
 	OID  string `yaml:"OID,omitempty"`
 	//TODO check for only name existing in metric tag, as there is some case for that
 	MetricTags []TableMetricTag `yaml:"metric_tags,omitempty"`
-	MetricType string        `yaml:"metric_type,omitempty"`
+	MetricType string           `yaml:"metric_type,omitempty"`
 	Options    map[string]string
 
 	MIB    string `yaml:"MIB,omitempty"`
@@ -57,17 +57,16 @@ type Metric struct {
 
 // TODO check for s["Tag"] if and when making these lowecase
 type TableMetricTag struct {
-	Index   int `yaml:"index"`
+	Index   int            `yaml:"index"`
 	Mapping map[int]string `yaml:"mapping"`
 
 	Tag string `yaml:"tag"`
 
-	mib            string `yaml:"mib"`
-	Symbol         Symbol `yaml:"symbol"`
-	Table          string `yaml:"table"`
+	mib            string       `yaml:"mib"`
+	Symbol         Symbol       `yaml:"symbol"`
+	Table          string       `yaml:"table"`
 	IndexTransform []IndexSlice `yaml:"index_transform"`
 }
-
 
 type oidMetric struct {
 	name       string
@@ -94,7 +93,6 @@ type tableMetric struct {
 	options    map[string]string
 }
 
-
 type parsedResult struct {
 	oids           []string
 	next_oids      []string
@@ -116,7 +114,6 @@ type parsedResult struct {
 // 	tag            string
 // 	indexTransform []IndexSlice
 // }
-
 
 type tableBatchKey struct {
 	mib   string
@@ -189,9 +186,9 @@ type parsedTableMetric struct {
 	forcedType          string
 	options             map[string]string
 	extractValuePattern *regexp.Regexp
-	rowOID             string
-	tableName string
-	tableOID string
+	rowOID              string
+	tableName           string
+	tableOID            string
 }
 
 // union of two above
@@ -254,5 +251,5 @@ type processedMetric struct {
 	name        string
 	value       interface{}
 	metric_type gosnmp.Asn1BER
-	tableName string
+	tableName   string
 }
