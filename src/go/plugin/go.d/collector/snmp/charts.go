@@ -202,6 +202,7 @@ func (c *Collector) addSNMPChart(processedMetric processedMetric) {
 		chart.Title = fmt.Sprintf(chart.Title, processedMetric.name)
 		chart.Units = "testunit/s"
 		chart.Ctx = fmt.Sprintf(chart.Ctx, processedMetric.name)
+		chart.Fam = fmt.Sprintf(chart.Fam, processedMetric.name)
 		chart.Dims = append(chart.Dims, &module.Dim{ ID:processedMetric.name, Name:processedMetric.name})
 
 		if err := c.Charts().Add(chart); err != nil {

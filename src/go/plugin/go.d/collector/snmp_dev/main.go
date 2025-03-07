@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	profileDir := "../snmp_profiles/default_profiles/"
+	profileDir := "profiles/"
 	// profileDir := "../snmp_profiles_dump/"
 	subnet := "20.20.21.0/24" // CHANGE THIS TO YOUR SUBNET
 	community := "public"
@@ -146,7 +146,10 @@ func main() {
 
 			for _, value := range metricMap {
 				// fmt.Println(value)
-				spew.Dump(value)
+				if value.tableName == "" {
+
+					spew.Dump(value)
+				}
 			}
 		}
 	}
