@@ -175,9 +175,10 @@ PGC *pgc_create(const char *name,
                 PGC_OPTIONS options, size_t partitions, size_t additional_bytes_per_page);
 
 // destroy the cache
-void pgc_destroy(PGC *cache);
+void pgc_destroy(PGC *cache, bool flush);
 
 #define PGC_SECTION_ALL ((Word_t)0)
+void pgc_flush_dirty_pages(PGC *cache, Word_t section);
 void pgc_flush_all_hot_and_dirty_pages(PGC *cache, Word_t section);
 
 // add a page to the cache and return a pointer to it

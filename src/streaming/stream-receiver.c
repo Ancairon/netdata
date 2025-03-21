@@ -65,7 +65,13 @@ void stream_receiver_log_payload(struct receiver_state *rpt, const char *payload
 }
 #endif
 
-static void stream_receiver_remove(struct stream_thread *sth, struct receiver_state *rpt, STREAM_HANDSHAKE reason);
+// help the IDE identify use after free
+#define stream_receiver_remove(sth, rpt, reason) do {           \
+        stream_receiver_remove_internal(sth, rpt, reason);      \
+        (rpt) = NULL;                                           \
+} while(0)
+
+static void stream_receiver_remove_internal(struct stream_thread *sth, struct receiver_state *rpt, STREAM_HANDSHAKE reason);
 
 // When a child disconnects this is the maximum we will wait
 // before we update the cloud that the child is offline
@@ -435,23 +441,6 @@ void stream_receiver_move_to_running_unsafe(struct stream_thread *sth, struct re
                "Failed to add receiver socket to nd_poll()",
                sth->id, rrdhost_hostname(rpt->host), rpt->remote_ip, rpt->remote_port);
 
-    // put the client IP and port into the buffers used by plugins.d
-    {
-        char buf[CONFIG_MAX_NAME];
-        snprintfz(buf, sizeof(buf),  "[%s]:%s", rpt->remote_ip, rpt->remote_port);
-        string_freez(rpt->thread.cd.id);
-        rpt->thread.cd.id = string_strdupz(buf);
-
-        string_freez(rpt->thread.cd.filename);
-        rpt->thread.cd.filename = string_strdupz(buf);
-
-        string_freez(rpt->thread.cd.fullfilename);
-        rpt->thread.cd.fullfilename = string_strdupz(buf);
-
-        string_freez(rpt->thread.cd.cmd);
-        rpt->thread.cd.cmd = string_strdupz(buf);
-    }
-
     rpt->thread.compressed.start = 0;
     rpt->thread.compressed.used = 0;
     rpt->thread.compressed.enabled = stream_decompression_initialize(rpt);
@@ -466,15 +455,25 @@ void stream_receiver_move_to_running_unsafe(struct stream_thread *sth, struct re
 
     PARSER *parser = NULL;
     {
-        rpt->thread.cd = (struct plugind){
-            .update_every = nd_profile.update_every,
-            .unsafe = {
-                .spinlock = SPINLOCK_INITIALIZER,
-                .running = true,
-                .enabled = true,
-            },
-            .started_t = now_realtime_sec(),
-        };
+        char buf[CONFIG_MAX_NAME];
+        snprintfz(buf, sizeof(buf),  "[%s]:%s", rpt->remote_ip, rpt->remote_port);
+        string_freez(rpt->thread.cd.id);
+        rpt->thread.cd.id = string_strdupz(buf);
+
+        string_freez(rpt->thread.cd.filename);
+        rpt->thread.cd.filename = NULL;
+
+        string_freez(rpt->thread.cd.fullfilename);
+        rpt->thread.cd.fullfilename = NULL;
+
+        string_freez(rpt->thread.cd.cmd);
+        rpt->thread.cd.cmd = NULL;
+
+        rpt->thread.cd.update_every = (int)nd_profile.update_every;
+        spinlock_init(&rpt->thread.cd.unsafe.spinlock);
+        rpt->thread.cd.unsafe.running = true;
+        rpt->thread.cd.unsafe.enabled = true;
+        rpt->thread.cd.started_t = now_realtime_sec();
 
         PARSER_USER_OBJECT user = {
             .enabled = plugin_is_enabled(&rpt->thread.cd),
@@ -523,7 +522,7 @@ void stream_receiver_move_entire_queue_to_running_unsafe(struct stream_thread *s
     }
 }
 
-static void stream_receiver_remove(struct stream_thread *sth, struct receiver_state *rpt, STREAM_HANDSHAKE reason) {
+static void stream_receiver_remove_internal(struct stream_thread *sth, struct receiver_state *rpt, STREAM_HANDSHAKE reason) {
     internal_fatal(sth->tid != gettid_cached(), "Function %s() should only be used by the dispatcher thread", __FUNCTION__ );
 
     receiver_set_exit_reason(rpt, reason, false);
@@ -540,7 +539,9 @@ static void stream_receiver_remove(struct stream_thread *sth, struct receiver_st
     ND_LOG_STACK_PUSH(lgs);
 
     PARSER *parser = __atomic_load_n(&rpt->thread.parser, __ATOMIC_RELAXED);
-    size_t count = parser ? parser->user.data_collections_count : 0;
+    size_t count = 0;
+    if(parser)
+        count = parser->user.data_collections_count;
 
     errno_clear();
     nd_log(NDLS_DAEMON, NDLP_ERR,
@@ -850,6 +851,7 @@ bool stream_receiver_receive_data(struct stream_thread *sth, struct receiver_sta
                    stream_handshake_error_to_string(reason), rpt->sock.fd);
 
             stream_receiver_remove(sth, rpt, reason);
+            break;
         }
         else if(status == EVLOOP_STATUS_CONTINUE && process_opcodes && stream_thread_process_opcodes(sth, &rpt->thread.meta))
             status = EVLOOP_STATUS_OPCODE_ON_ME;
@@ -1055,6 +1057,7 @@ void stream_receiver_replication_check_from_poll(struct stream_thread *sth, usec
                    __atomic_load_n(&host->stream.rcv.status.replication.counter_in, __ATOMIC_RELAXED));
 
             stream_receiver_remove(sth, rpt, STREAM_HANDSHAKE_DISCONNECT_REPLICATION_STALLED);
+            continue;
         }
 
         rpt->replication.last_checked_ut = rpt->replication.last_progress_ut;

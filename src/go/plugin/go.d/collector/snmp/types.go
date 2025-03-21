@@ -12,7 +12,6 @@ type snmpPDU struct {
 	metric_type gosnmp.Asn1BER
 }
 
-// Profile represents the structure of a Datadog SNMP profile.
 type Profile struct {
 	Extends     []string     `yaml:"extends"`
 	SysObjectID SysObjectIDs `yaml:"sysobjectid"`
@@ -20,7 +19,6 @@ type Profile struct {
 	Metrics     []Metric     `yaml:"metrics"`
 }
 
-// SysObjectIDs allows both a string and list of strings for sysobjectid.
 type SysObjectIDs []string
 
 type Metadata struct {
@@ -55,14 +53,13 @@ type Metric struct {
 	Symbols []Symbol    `yaml:"symbols,omitempty"`
 }
 
-// TODO check for s["Tag"] if and when making these lowecase
 type TableMetricTag struct {
 	Index   int            `yaml:"index"`
 	Mapping map[int]string `yaml:"mapping"`
 
 	Tag string `yaml:"tag"`
 
-	mib            string       `yaml:"mib"`
+	MIB            string       `yaml:"mib"`
 	Symbol         Symbol       `yaml:"symbol"`
 	Table          string       `yaml:"table"`
 	IndexTransform []IndexSlice `yaml:"index_transform"`
@@ -99,21 +96,6 @@ type parsedResult struct {
 	bulk_oids      []string
 	parsed_metrics []parsedMetric
 }
-
-// not used
-// type indexTableMetricTag struct {
-// 	index   int
-// 	mapping map[int]string
-// 	tag     string
-// }
-
-// type columnTableMetricTag struct {
-// 	mib            string
-// 	column         Symbol
-// 	table          string
-// 	tag            string
-// 	indexTransform []IndexSlice
-// }
 
 type tableBatchKey struct {
 	mib   string
@@ -176,7 +158,7 @@ type parsedSymbolMetric struct {
 	enforceScalar       bool
 	options             map[string]string
 	extractValuePattern *regexp.Regexp
-	baseoid             string //TODO change this to OID, it will not have nested OIDs as it is a symbol
+	baseoid             string //TODO consider changing this to OID, it will not have nested OIDs as it is a symbol
 }
 
 type parsedTableMetric struct {
@@ -192,24 +174,17 @@ type parsedTableMetric struct {
 }
 
 // union of two above
-type parsedMetric interface{}
+type parsedMetric any
 
-type parsedSimpleMetricTag struct {
+// Not supported yet
+/*type parsedSimpleMetricTag struct {
 	name string
 }
 
 type parsedMatchMetricTag struct {
-	tags    []string
-	symbol  Symbol
-	pattern *regexp.Regexp
-}
-
-type parsedMetricTag struct {
-	name string
-
-	tags    []string
-	symbol  Symbol
-	pattern *regexp.Regexp
+tags    []string
+symbol  Symbol
+pattern *regexp.Regexp
 }
 
 type symbolTag struct {
@@ -220,6 +195,14 @@ type symbolTag struct {
 type parsedSymbolTagsResult struct {
 	oids             []string
 	parsedSymbolTags []symbolTag
+}
+*/
+type parsedMetricTag struct {
+	name string
+
+	tags    []string
+	pattern *regexp.Regexp
+	// symbol  Symbol not used yet
 }
 
 type metricParseResult struct {

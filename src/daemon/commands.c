@@ -164,9 +164,7 @@ static cmd_status_t cmd_exit_execute(char *args, char **message)
 
     nd_log_limits_unlimited();
     netdata_log_info("COMMAND: Cleaning up to exit.");
-    netdata_cleanup_and_exit(EXIT_REASON_CMD_EXIT, NULL, NULL, NULL);
-    exit(0);
-
+    netdata_exit_gracefully(EXIT_REASON_CMD_EXIT, true);
     return CMD_STATUS_SUCCESS;
 }
 
@@ -410,7 +408,7 @@ static cmd_status_t cmd_remove_stale_node_internal(char *args, char **message, b
     RRDHOST *host = NULL;
     host = rrdhost_find_by_guid(args);
     if (!host)
-        host = find_host_by_node_id(args);
+        host = rrdhost_find_by_node_id(args);
 
     if (!host) {
         sqlite3_stmt *res = NULL;

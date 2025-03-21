@@ -112,6 +112,13 @@ ALWAYS_INLINE struct rrdengine_datafile *njfv2idx_find_and_acquire_j2_header(NJF
         }
 
         datafile = *PValue;
+
+        if (!datafile || !datafile->journalfile) {
+            datafile = NULL;
+            PValue = NULL;
+            continue;
+        }
+
         TIME_RANGE_COMPARE rc = is_page_in_time_range(datafile->journalfile->v2.first_time_s,
                                                       datafile->journalfile->v2.last_time_s,
                                                       s->wanted_start_time_s,
@@ -1328,7 +1335,8 @@ void journalfile_migrate_to_v2_callback(Word_t section, unsigned datafile_fileno
 
     int fd_v2;
     uint8_t *data_start = nd_mmap_advanced(path, total_file_size, MAP_SHARED, 0, false, true, &fd_v2);
-    uint8_t *data = data_start;
+    if(!data_start)
+        out_of_memory(__FUNCTION__, total_file_size, path);
 
     memset(data_start, 0, extent_offset);
 
@@ -1353,7 +1361,7 @@ void journalfile_migrate_to_v2_callback(Word_t section, unsigned datafile_fileno
 
     struct journal_v2_block_trailer *journal_v2_trailer;
 
-    data = journalfile_v2_write_extent_list(JudyL_extents_pos, data_start + extent_offset);
+    uint8_t *data = journalfile_v2_write_extent_list(JudyL_extents_pos, data_start + extent_offset);
     internal_error(true, "DBENGINE: write extent list so far %llu", (now_monotonic_usec() - start_loading) / USEC_PER_MS);
 
     fatal_assert(data == data_start + extent_offset_trailer);

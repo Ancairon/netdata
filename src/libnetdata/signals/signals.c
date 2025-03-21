@@ -34,9 +34,21 @@ void signals_unblock(int signals[], size_t count) {
         nd_log(NDLS_COLLECTORS, NDLP_ERR, "SIGNALS: cannot unmask signals");
 }
 
+void signals_unblock_deadly(void) {
+    int deadly_signals[] = {
+        SIGBUS,
+        SIGSEGV,
+        SIGFPE,
+        SIGILL,
+        SIGABRT,
+        SIGSYS,
+        SIGXCPU,
+        SIGXFSZ,
+    };
+    signals_unblock(deadly_signals, _countof(deadly_signals));
+}
+
 void signals_block_all_except_deadly(void) {
     signals_block_all();
-
-    int deadly_signals[] = {SIGBUS, SIGSEGV, SIGFPE, SIGILL, SIGABRT};
-    signals_unblock(deadly_signals, _countof(deadly_signals));
+    signals_unblock_deadly();
 }

@@ -1,13 +1,14 @@
 package snmp
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"reflect"
 	"regexp"
 )
 
-func parseMetrics(metrics []Metric) parsedResult {
+func parseMetrics(metrics []Metric) (parsedResult, error) {
 	oids := []string{}
 	next_oids := []string{}
 	bulk_oids := []string{}
@@ -16,8 +17,11 @@ func parseMetrics(metrics []Metric) parsedResult {
 	indexes_to_resolve := []indexMapping{}
 	bulk_threshold := 0
 	for _, metric := range metrics {
+		result, err := parseMetric(metric)
 
-		result := parseMetric(metric)
+		if err != nil {
+			return parsedResult{}, err
+		}
 
 		oids = append(oids, result.oidsToFetch...)
 
@@ -42,10 +46,10 @@ func parseMetrics(metrics []Metric) parsedResult {
 
 	}
 	return parsedResult{oids: oids,
-		next_oids: next_oids, bulk_oids: bulk_oids, parsed_metrics: parsed_metrics}
+		next_oids: next_oids, bulk_oids: bulk_oids, parsed_metrics: parsed_metrics}, nil
 }
 
-func parseMetric(metric Metric) metricParseResult {
+func parseMetric(metric Metric) (metricParseResult, error) {
 	/*Can either be:
 
 	* An OID metric:
@@ -84,40 +88,34 @@ func parseMetric(metric Metric) metricParseResult {
 	castedTableMetricTags := []TableMetricTag{}
 
 	if len(metric.MetricTags) > 0 {
-		// TODO investigate if there are metric tags and not only table metric tags
-		// fmt.Println("parseMetric MetricTags switch, have:")
-		// spew.Dump(metric.MetricTags)
-		// switch metric.MetricTags[0].(type) {
-		// case string:
-		// 	os.Exit(-40)
-		// 	castedStringMetricTags = sliceToStrings(metric.MetricTags)
+		/*//TODO investigate if there are metric tags and not only table metric tags
+		fmt.Println("parseMetric MetricTags switch, have:")
+		spew.Dump(metric.MetricTags)
+		switch metric.MetricTags[0].(type) {
+		case string:
+			os.Exit(-40)
+			castedStringMetricTags = sliceToStrings(metric.MetricTags)
 
-		// case MetricTag:
-		// 	os.Exit(-40)
-		// 	castedTableMetricTags = sliceToTableMetricTags(metric.MetricTags)
-		// }
+		case MetricTag:
+			os.Exit(-40)
+			castedTableMetricTags = sliceToTableMetricTags(metric.MetricTags)
+		}*/
 	}
 
-	// fmt.Println(metric)
 	if len(metric.OID) > 0 {
 		// TODO investigate if this exists in the yamls
-		// fmt.Printf("parseMetric/Parsing OID metric: %s\n", metric.Name)
-		return (parseOIDMetric(oidMetric{name: metric.Name, oid: metric.OID, metricTags: castedStringMetricTags, forcedType: metric.MetricType, options: metric.Options}))
+		return (parseOIDMetric(oidMetric{name: metric.Name, oid: metric.OID, metricTags: castedStringMetricTags, forcedType: metric.MetricType, options: metric.Options})), nil
 	} else if len(metric.MIB) == 0 {
-		fmt.Errorf("Unsupported metric {%v}", metric)
+		return metricParseResult{}, fmt.Errorf("unsupported metric {%v}", metric)
 	} else if metric.Symbol != (Symbol{}) {
-		// single metric
-		// fmt.Printf("parseMetric/Parsing Single Metric: %s\n", metric.Symbol)
-
+		// Single Metric
 		return (parseSymbolMetric(symbolMetric{mib: metric.MIB, symbol: metric.Symbol, forcedType: metric.MetricType, metricTags: castedStringMetricTags, options: metric.Options}))
 	} else if metric.Table != nil {
-		//table
-		// fmt.Printf("parseMetric/Parsing Table: %s\n", metric.Table)
-
+		// Table
 		if len(metric.MetricTags) > 0 {
-			// fmt.Println("parseMetric MetricTags switch, have:")
-			// spew.Dump(metric.MetricTags)
-			/*// for _, rawItem := range metric.MetricTags {
+
+			/*//This will be cleared out when tags are supported
+			// for _, rawItem := range metric.MetricTags {
 			// 	item, ok := rawItem.(map[string]interface{})
 			// 	if !ok {
 			// 		continue
@@ -201,30 +199,36 @@ func parseMetric(metric Metric) metricParseResult {
 		}
 
 		if metric.Symbols == nil {
-			fmt.Errorf("When specifying a table, you must specify a list of symbols %v", metric)
+			return metricParseResult{}, fmt.Errorf("when specifying a table, you must specify a list of symbols %v", metric)
 		}
 
-		return (parseTableMetric(tableMetric{mib: metric.MIB, table: metric.Table, symbols: metric.Symbols, forcedType: metric.MetricType, metricTags: castedTableMetricTags, options: metric.Options}))
+		return (parseTableMetric(tableMetric{
+			mib:        metric.MIB,
+			table:      metric.Table,
+			symbols:    metric.Symbols,
+			forcedType: metric.MetricType,
+			metricTags: castedTableMetricTags,
+			options:    metric.Options,
+		}))
 
 	}
-	return metricParseResult{}
-
+	return metricParseResult{}, fmt.Errorf("unsupported metric {%v}", metric)
 }
 
 // TODO error outs on functions
 func parseOIDMetric(metric oidMetric) metricParseResult {
-	// Parse a fully resolved OID/name metric.
+	/*Parse a fully resolved OID/name metric.
 
-	//     Note: This `OID/name` syntax is deprecated in favour of `symbol` syntax.
+	  Note: This `OID/name` syntax is deprecated in favour of `symbol` syntax.
 
-	//     Example:
+	  Example:
 
-	//     ```
-	//     metrics:
-	//       - OID: 1.3.6.1.2.1.2.1
-	//         name: ifNumber
-	//     ```
-
+	  ```
+	  metrics:
+	    - OID: 1.3.6.1.2.1.2.1
+	      name: ifNumber
+	  ```
+	*/
 	name := metric.name
 	oid := metric.oid
 
@@ -249,26 +253,27 @@ func parseOIDMetric(metric oidMetric) metricParseResult {
 }
 
 // TODO error outs on functions
-// done translating
-func parseSymbolMetric(metric symbolMetric) metricParseResult {
-	//     Parse a symbol metric (= an OID in a MIB).
-	//     Example:
+func parseSymbolMetric(metric symbolMetric) (metricParseResult, error) {
+	/*    Parse a symbol metric (= an OID in a MIB).
+	Example:
 
-	//     ```
-	//     metrics:
-	//       - MIB: IF-MIB
-	//         symbol: <string or OID/name object>
-	//       - MIB: IF-MIB
-	//         symbol:                     # MIB-less syntax
-	//           OID: 1.3.6.1.2.1.6.5.0
-	//           name: tcpActiveOpens
-	//       - MIB: IF-MIB
-	//         symbol: tcpActiveOpens      # require MIB syntax
-	//     ```
+	```
+	metrics:
+	  - MIB: IF-MIB
+	    symbol: <string or OID/name object>
+	  - MIB: IF-MIB
+	    symbol:                     # MIB-less syntax
+	      OID: 1.3.6.1.2.1.6.5.0
+	      name: tcpActiveOpens
+	  - MIB: IF-MIB
+	    symbol: tcpActiveOpens      # require MIB syntax
+	```*/
 	mib := metric.mib
 	symbol := metric.symbol
-
-	parsed_symbol := parseSymbol(mib, symbol)
+	parsed_symbol, err := parseSymbol(mib, symbol)
+	if err != nil {
+		return metricParseResult{}, err
+	}
 
 	parsed_symbol_metric := parsedSymbolMetric{
 		name:                parsed_symbol.name,
@@ -279,13 +284,6 @@ func parseSymbolMetric(metric symbolMetric) metricParseResult {
 		extractValuePattern: parsed_symbol.extractValuePattern,
 		baseoid:             parsed_symbol.oid,
 	}
-	// fmt.Println("parseSymbolMetric metric parsed result:", metricParseResult{
-	// 	oidsToFetch:   []string{parsed_symbol.oid},
-	// 	oidsToResolve: parsed_symbol.oidsToResolve,
-	// 	parsedMetrics: []parsedMetric{parsed_symbol_metric},
-	// 	tableBatches:  nil,
-	// 	indexMappings: nil,
-	// })
 
 	return metricParseResult{
 		oidsToFetch:   []string{parsed_symbol.oid},
@@ -293,21 +291,20 @@ func parseSymbolMetric(metric symbolMetric) metricParseResult {
 		parsedMetrics: []parsedMetric{parsed_symbol_metric},
 		tableBatches:  nil,
 		indexMappings: nil,
-	}
+	}, nil
 }
 
 // TODO error outs on functions
-// done translating
-func parseTableMetric(metric tableMetric) metricParseResult {
+func parseTableMetric(metric tableMetric) (metricParseResult, error) {
 
 	mib := metric.mib
-	// fmt.Printf("attempting to parse table with parseSymbol %s\n", metric.Table)
-	parsed_table := parseSymbol(mib, metric.table)
+	parsed_table, err := parseSymbol(mib, metric.table)
+	if err != nil {
+		return metricParseResult{}, err
+	}
 
 	table_name := parsed_table.name
 	table_oid := parsed_table.oid
-
-	// fmt.Printf("Parsed_table: %s %s\n", table_name, table_oid)
 
 	oids_to_resolve := parsed_table.oidsToResolve
 
@@ -318,18 +315,15 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 
 	if metric.metricTags != nil {
 		for _, metric_tag := range metric.metricTags {
-			parsed_table_metric_tag := parseTableMetricTag(mib, parsed_table, metric_tag)
-
-			// fmt.Println("====================raw parsedtablemetrictag inside parseTableMetric")
-			// spew.Dump(parsed_table_metric_tag)
+			parsed_table_metric_tag, err := parseTableMetricTag(mib, parsed_table, metric_tag)
+			if err != nil {
+				return metricParseResult{}, err
+			}
 
 			if parsed_table_metric_tag.oidsToResolve != nil {
 				oids_to_resolve = mergeStringMaps(oids_to_resolve, parsed_table_metric_tag.oidsToResolve)
 
 				column_tags = append(column_tags, parsed_table_metric_tag.columnTags...)
-
-				// fmt.Println("====================column_tags")
-				// spew.Dump(column_tags)
 
 				table_batches = mergeTableBatches(table_batches, parsed_table_metric_tag.tableBatches)
 			} else {
@@ -363,12 +357,10 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 	parsed_metrics := []parsedMetric{}
 
 	for _, symbol := range metric.symbols {
-		parsed_symbol := parseSymbol(mib, symbol)
-
-		// fmt.Printf("PARSED SYMBOL\n")
-		// spew.Dump(parsed_symbol)
-		// fmt.Printf("\n\nINDEX TAGS\n")
-		// spew.Dump(column_tags)
+		parsed_symbol, err := parseSymbol(mib, symbol)
+		if err != nil {
+			return metricParseResult{}, nil
+		}
 
 		for key, value := range parsed_symbol.oidsToResolve {
 			oids_to_resolve[key] = value
@@ -388,13 +380,10 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 			tableOID:            table_oid,
 		}
 
-		// fmt.Printf("PARSED TABLE METRIC\n")
-		// spew.Dump(parsed_table_metric)
-
 		parsed_metrics = append(parsed_metrics, parsed_table_metric)
 	}
 
-	table_batches = mergeTableBatches(table_batches, map[tableBatchKey]tableBatch{tableBatchKey{mib: mib, table: parsed_table.name}: tableBatch{tableOID: parsed_table.oid, oids: table_oids}})
+	table_batches = mergeTableBatches(table_batches, map[tableBatchKey]tableBatch{{mib: mib, table: parsed_table.name}: {tableOID: parsed_table.oid, oids: table_oids}})
 
 	return metricParseResult{
 		oidsToFetch:   []string{},
@@ -402,98 +391,100 @@ func parseTableMetric(metric tableMetric) metricParseResult {
 		tableBatches:  table_batches,
 		indexMappings: index_mappings,
 		parsedMetrics: parsed_metrics,
-	}
-
+	}, nil
 }
 
-/*
-Parse an item of the `metric_tags` section of a table metric.
+func parseTableMetricTag(mib string, parsed_table parsedSymbol, metric_tag TableMetricTag) (parsedTableMetricTag, error) {
+	/*
+		Parse an item of the `metric_tags` section of a table metric.
 
-Items can be:
+		Items can be:
 
-* A reference to a column in the same table.
+		* A reference to a column in the same table.
 
-Example using entPhySensorTable in ENTITY-SENSOR-MIB:
+		Example using entPhySensorTable in ENTITY-SENSOR-MIB:
 
-```
-metric_tags:
-  - tag: sensor_type
-    column: entPhySensorType
-    # OR
-    column:
-    OID: 1.3.6.1.2.1.99.1.1.1.1
-    name: entPhySensorType
+		```
+		metric_tags:
+			- tag: sensor_type
+			column: entPhySensorType
+			# OR
+			column:
+			OID: 1.3.6.1.2.1.99.1.1.1.1
+			name: entPhySensorType
 
-```
+		```
 
-* A reference to a column in a different table.
+		* A reference to a column in a different table.
 
-Example:
+		Example:
 
-```
-metric_tags:
-  - tag: adapter
-    table: genericAdaptersAttrTable
-    column: adapterName
-    # OR
-    column:
-    OID: 1.3.6.1.4.1.343.2.7.2.2.1.1.1.2
-    name: adapterName
+		```
+		metric_tags:
+			- tag: adapter
+			table: genericAdaptersAttrTable
+			column: adapterName
+			# OR
+			column:
+			OID: 1.3.6.1.4.1.343.2.7.2.2.1.1.1.2
+			name: adapterName
 
-```
+		```
 
-* A reference to an OID by its index in the table entry.
+		* A reference to an OID by its index in the table entry.
 
-An optional `mapping` can be used to map index values to human-readable strings.
+		An optional `mapping` can be used to map index values to human-readable strings.
 
-Example using ipIfStatsTable in IP-MIB:
+		Example using ipIfStatsTable in IP-MIB:
 
-```
-metric_tags:
-  - # ipIfStatsIPVersion (1.3.6.1.2.1.4.21.3.1.1)
-    tag: ip_version
-    index: 1
-    mapping:
-    0: unknown
-    1: ipv4
-    2: ipv6
-    3: ipv4z
-    4: ipv6z
-    16: dns
-  - # ipIfStatsIfIndex (1.3.6.1.2.1.4.21.3.1.2)
-    tag: interface
-    index: 2
-    ```
-*/
-func parseTableMetricTag(mib string, parsed_table parsedSymbol, metric_tag TableMetricTag) parsedTableMetricTag {
+		```
+		metric_tags:
+			- # ipIfStatsIPVersion (1.3.6.1.2.1.4.21.3.1.1)
+			tag: ip_version
+			index: 1
+			mapping:
+			0: unknown
+			1: ipv4
+			2: ipv6
+			3: ipv4z
+			4: ipv6z
+			16: dns
+			- # ipIfStatsIfIndex (1.3.6.1.2.1.4.21.3.1.2)
+			tag: interface
+			index: 2
+			```
+	*/
 	if metric_tag.Symbol != (Symbol{}) {
-		metric_tag_mib := metric_tag.mib
+		metric_tag_mib := metric_tag.MIB
 
 		if metric_tag.Table != "" {
 			return parseOtherTableColumnMetricTag(metric_tag_mib, metric_tag.Table, metric_tag)
 		}
 
-		if mib != metric_tag_mib {
-			fmt.Errorf("When tagging from a different MIB, the table must be specified")
+		if mib != metric_tag_mib && metric_tag_mib != "" {
+			return parsedTableMetricTag{}, fmt.Errorf("when tagging from a different MIB, the table must be specified, TABLE_MAME: %s MIB: %s METRIC_TAG_MIB: %s", parsed_table.name, mib, metric_tag_mib)
 		}
-		// fmt.Println("\n\n\n\nPARSECOLUMNMETRICTAG\n")
-		// spew.Dump(parseColumnMetricTag(mib, parsed_table, metric_tag))
-		// fmt.Println("END OF OUTPUT")
 		return parseColumnMetricTag(mib, parsed_table, metric_tag)
-	}
-
-	if &metric_tag.Index != nil {
+	} else if &metric_tag.Index != nil { //TODO, this is tautological condition, need to return a "-1" on index if it does not exist or something similar
 		return parseIndexMetricTag(metric_tag)
+	} else {
+		return parsedTableMetricTag{}, errors.New("symbol is empty")
 	}
 
-	return parsedTableMetricTag{}
 }
 
-func parseIndexMetricTag(metric_tag TableMetricTag) parsedTableMetricTag {
-	index_tags := []indexTag{indexTag{
-		parsedMetricTag: parseMetricTag(MetricTag{
+func parseIndexMetricTag(metric_tag TableMetricTag) (parsedTableMetricTag, error) {
+	parsed_metric_tag, err := parseMetricTag(
+		MetricTag{
 			Tag: metric_tag.Tag,
-		}), index: metric_tag.Index,
+		})
+	if err != nil {
+		return parsedTableMetricTag{}, err
+	}
+
+	index_tags := []indexTag{{
+		parsedMetricTag: parsed_metric_tag,
+		index:           metric_tag.Index,
 	}}
 
 	index_mappings := map[int]map[int]string{}
@@ -505,12 +496,18 @@ func parseIndexMetricTag(metric_tag TableMetricTag) parsedTableMetricTag {
 	return parsedTableMetricTag{
 		indexTags:     index_tags,
 		indexMappings: index_mappings,
-	}
+	}, nil
 }
 
-func parseOtherTableColumnMetricTag(mib string, table string, metric_tag TableMetricTag) parsedTableMetricTag {
-	parsed_table := parseSymbol(mib, &table)
-	parsed_metric_tag := parseColumnMetricTag(mib, parsed_table, metric_tag)
+func parseOtherTableColumnMetricTag(mib string, table string, metric_tag TableMetricTag) (parsedTableMetricTag, error) {
+	parsed_table, err := parseSymbol(mib, &table)
+	if err != nil {
+		return parsedTableMetricTag{}, err
+	}
+	parsed_metric_tag, err := parseColumnMetricTag(mib, parsed_table, metric_tag)
+	if err != nil {
+		return parsedTableMetricTag{}, err
+	}
 
 	oids_to_resolve := parsed_metric_tag.oidsToResolve
 	oids_to_resolve = mergeStringMaps(oids_to_resolve, parsed_table.oidsToResolve)
@@ -519,209 +516,174 @@ func parseOtherTableColumnMetricTag(mib string, table string, metric_tag TableMe
 		oidsToResolve: oids_to_resolve,
 		tableBatches:  parsed_metric_tag.tableBatches,
 		columnTags:    parsed_metric_tag.columnTags,
-	}
+	}, nil
 }
 
-func parseColumnMetricTag(mib string, parsed_table parsedSymbol, metric_tag TableMetricTag) parsedTableMetricTag {
-	parsed_column := parseSymbol(mib, metric_tag.Symbol)
+func parseColumnMetricTag(mib string, parsed_table parsedSymbol, metric_tag TableMetricTag) (parsedTableMetricTag, error) {
+	parsed_column, err := parseSymbol(mib, metric_tag.Symbol)
+	if err != nil {
+		return parsedTableMetricTag{}, err
+	}
 
-	// fmt.Println("PARSED COLUMN")
-	// spew.Dump(parsed_column)
+	batches := map[tableBatchKey]tableBatch{
+		{mib: mib, table: parsed_table.name}: {tableOID: parsed_table.oid, oids: []string{parsed_column.oid}},
+	}
 
-	batches := map[tableBatchKey]tableBatch{tableBatchKey{mib: mib, table: parsed_table.name}: tableBatch{tableOID: parsed_table.oid, oids: []string{parsed_column.oid}}}
+	parsed_metric_tag, err := parseMetricTag(MetricTag{MIB: metric_tag.MIB, OID: "", Tag: metric_tag.Tag, Symbol: metric_tag.Symbol})
+	if err != nil {
+		return parsedTableMetricTag{}, err
+	}
 
 	return parsedTableMetricTag{
 		oidsToResolve: parsed_column.oidsToResolve,
 		columnTags: []columnTag{{
-			parsedMetricTag: parseMetricTag(MetricTag{MIB: metric_tag.mib, OID: "", Tag: metric_tag.Tag, Symbol: metric_tag.Symbol}),
+			parsedMetricTag: parsed_metric_tag,
 			column:          parsed_column.name,
 			indexSlices:     parseIndexSlices(metric_tag),
 		},
 		},
 		tableBatches: batches,
-	}
+	}, nil
 }
 
-/*
-//     Transform index_transform into list of index slices.
-
-//     `index_transform` is needed to support tagging using another table with different indexes.
-
-//     Example: TableB have two indexes indexX (1 digit) and indexY (3 digits).
-//         We want to tag by an external TableA that have indexY (3 digits).
-
-//         For example TableB has a row with full index `1.2.3.4`, indexX is `1` and indexY is `2.3.4`.
-//         TableA has a row with full index `2.3.4`, indexY is `2.3.4` (matches indexY of TableB).
-
-//         SNMP integration doesn't know how to compare the full indexes from TableB and TableA.
-//         We need to extract a subset of the full index of TableB to match with TableA full index.
-
-//         Using the below `index_transform` we provide enough info to extract a subset of index that
-//         will be used to match TableA's full index.
-
-// ```yaml
-// index_transform:
-//   - start: 1
-//   - end: 3
-//
-// ```
-*/
 func parseIndexSlices(metric_tag TableMetricTag) []IndexSlice {
+	/*
+	   //     Transform index_transform into list of index slices.
+
+	   //     `index_transform` is needed to support tagging using another table with different indexes.
+
+	   //     Example: TableB have two indexes indexX (1 digit) and indexY (3 digits).
+	   //         We want to tag by an external TableA that have indexY (3 digits).
+
+	   //         For example TableB has a row with full index `1.2.3.4`, indexX is `1` and indexY is `2.3.4`.
+	   //         TableA has a row with full index `2.3.4`, indexY is `2.3.4` (matches indexY of TableB).
+
+	   //         SNMP integration doesn't know how to compare the full indexes from TableB and TableA.
+	   //         We need to extract a subset of the full index of TableB to match with TableA full index.
+
+	   //         Using the below `index_transform` we provide enough info to extract a subset of index that
+	   //         will be used to match TableA's full index.
+
+	   // ```yaml
+	   // index_transform:
+	   //   - start: 1
+	   //   - end: 3
+	   //
+	   // ```
+	*/
 	raw_index_slices := metric_tag.IndexTransform
 	index_slices := []IndexSlice{}
 
-	if raw_index_slices != nil {
-		for _, rule := range raw_index_slices {
-			// if not
-
-			start, end := rule.Start, rule.End
-			// check that they are int
-			// if not
-			if start > end {
-				fmt.Errorf("start bigger than end")
-			}
-			if start < 0 {
-				fmt.Errorf("start is negative")
-			}
-
-			index_slices = append(index_slices, IndexSlice{start, end + 1})
-
+	for _, rule := range raw_index_slices {
+		start, end := rule.Start, rule.End
+		if start > end {
+			log.Println("start bigger than end")
+			return nil
 		}
+		if start < 0 {
+			log.Println("start is negative")
+			return nil
+		}
+		index_slices = append(index_slices, IndexSlice{start, end + 1})
 
 	}
+
 	return index_slices
 }
 
-func parseMetricTag(metric_tag MetricTag) parsedMetricTag {
+func parseMetricTag(metric_tag MetricTag) (parsedMetricTag, error) {
 	parsed_metric_tag := parsedMetricTag{}
+
 	if metric_tag.Tag != "" {
 		parsed_metric_tag = parseSimpleMetricTag(metric_tag)
 	} else if metric_tag.Match != "" && metric_tag.Tags != nil {
-		parsed_metric_tag = parseRegexMetricTag(metric_tag)
+		tmp, err := parseRegexMetricTag(metric_tag)
+		if err != nil {
+			return parsedMetricTag{}, err
+		} else {
+			parsed_metric_tag = tmp
+		}
 	} else {
-		fmt.Errorf("A metric tag must specify either a tag, or a mapping of tags and a regular expression %v", metric_tag)
+		return parsedMetricTag{}, fmt.Errorf("a metric tag must specify either a tag, or a mapping of tags and a regular expression %v", metric_tag)
 	}
-	return parsed_metric_tag
+	return parsed_metric_tag, nil
 }
 
-func parseRegexMetricTag(metric_tag MetricTag) parsedMetricTag {
-	// Extract the "match" value.
-
+func parseRegexMetricTag(metric_tag MetricTag) (parsedMetricTag, error) {
 	match := metric_tag.Match
 	tags := metric_tag.Tags
 
-	if reflect.TypeOf(tags) != reflect.TypeOf(map[string]string{}) {
-		fmt.Errorf("line 209, problem")
-	}
+	// To be supported once tags are supported
+	// if reflect.TypeOf(tags) != reflect.TypeOf(map[string]string{}) {
+	// }
 
-	// Compile the regex.
 	pattern, err := regexp.Compile(match)
 	if err != nil {
-		fmt.Errorf("Failed to compile regular expression")
-		// return proper error
+		return parsedMetricTag{}, err
 	}
 
-	// Create and return a new ParsedMatchMetricTag.
-	return parsedMetricTag{tags: tags, pattern: pattern}
-
+	return parsedMetricTag{tags: tags, pattern: pattern}, nil
 }
 
 func parseSimpleMetricTag(metric_tag MetricTag) parsedMetricTag {
 	return parsedMetricTag{name: metric_tag.Tag}
 }
 
-func parseSymbol(mib string, symbol interface{}) parsedSymbol {
-	// Parse an OID symbol.
+func parseSymbol(mib string, symbol interface{}) (parsedSymbol, error) {
+	/*
+		Parse an OID symbol.
 
-	// This can either be the unresolved name of a symbol:
+		This can either be the unresolved name of a symbol:
 
-	// ```
-	// symbol: ifNumber
-	// ```
+		```
+		symbol: ifNumber
+		```
 
-	// Or a resolved OID/name object:
+		Or a resolved OID/name object:
 
-	// ```
-	// symbol:
-	//     OID: 1.3.6.1.2.1.2.1
-	//     name: ifNumber
-	// ```
-
+		```
+		symbol:
+		    OID: 1.3.6.1.2.1.2.1
+		    name: ifNumber
+		```
+	*/
 	// if reflect.TypeOf(symbol) == reflect.TypeOf(string) {
 	// 	// TODO, here they use ObjectIdentity(mib,symbol) to resolve the symbol. this is not straightfowrard in Go, it is a pysnmp function.
 	// 	// oid:=
 
-	// 	// return ParsedSymbol
-	// }
-
-	// fmt.Printf("ParsingSymbol %s for MIB %s with type %s\n", symbol, mib, reflect.TypeOf(symbol))
-
 	switch s := symbol.(type) {
 	case Symbol:
-		// fmt.Printf("Symbol found\n")
 		oid := s.OID
 		name := s.Name
 		if s.ExtractValue != "" {
 			extractValuePattern, err := regexp.Compile(s.ExtractValue)
 			if err != nil {
 
-				return parsedSymbol{}
-				// return "", fmt.Errorf("Failed to compile regular expression %q: %v", symbol.ExtractValue, err)
+				return parsedSymbol{}, err
 			}
-			// fmt.Printf("Returning regexcase %s", ParsedSymbol{
-			// 	name,
-			// 	oid,
-			// 	extractValuePattern,
-			// 	map[string]string{name: oid},
-			// })
 			return parsedSymbol{
 				name,
 				oid,
 				extractValuePattern,
 				map[string]string{name: oid},
-			}
+			}, nil
 		} else {
-			// fmt.Printf("Returning %s\n", ParsedSymbol{
-			// 	name,
-			// 	oid,
-			// 	nil,
-			// 	map[string]string{name: oid},
-			// })
 			return parsedSymbol{
 				name,
 				oid,
 				nil,
 				map[string]string{name: oid},
-			}
+			}, nil
 		}
 	case string:
-		log.Println("string, can't support yet")
-		return parsedSymbol{}
-	// case interface{}:
-	// 	v:=s.(Symbol)
-	// 	oid := v.OID
-	// 	name := v.Name
-	// 	fmt.Printf("interface found\n", )
-
-	// 	fmt.Printf("Returning %s\n",ParsedSymbol{
-	// 		name,
-	// 		oid,
-	// 		nil,
-	// 		map[string]string{name: oid},
-	// 	})
-	// 	return ParsedSymbol{
-	// 		name,
-	// 		oid,
-	// 		nil,
-	// 		map[string]string{name: oid},
-	// 	}
+		return parsedSymbol{}, errors.New("string only symbol, can't support yet")
 	case map[string]interface{}:
 		oid, okOID := s["OID"].(string)
 		name, okName := s["name"].(string)
 
 		if !okOID || !okName {
-			fmt.Errorf("invalid symbol format: %+v", s)
-			return parsedSymbol{}
+
+			return parsedSymbol{}, fmt.Errorf("invalid symbol format: %+v", s)
 		}
 
 		return parsedSymbol{
@@ -729,11 +691,10 @@ func parseSymbol(mib string, symbol interface{}) parsedSymbol {
 			oid:                 oid,
 			extractValuePattern: nil,
 			oidsToResolve:       map[string]string{name: oid},
-		}
+		}, nil
 
 	default:
-		fmt.Errorf("unsupported symbol type: %T", symbol)
-		return parsedSymbol{}
+		return parsedSymbol{}, fmt.Errorf("unsupported symbol type: %T", symbol)
 	}
 
 }

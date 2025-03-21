@@ -183,14 +183,14 @@ static bool parse_prototype(json_object *jobj, const char *path, RRD_ALERT_PROTO
 
             JSONC_PARSE_BOOL_OR_ERROR_AND_RETURN(rule, path, "enabled", ap->match.enabled, error, strict);
 
-            STRING *type = NULL;
-            JSONC_PARSE_TXT2STRING_OR_ERROR_AND_RETURN(rule, path, "type", type, error, strict);
-            if(string_strcmp(type, "template") == 0)
+            char type[32];
+            JSONC_PARSE_TXT2CHAR_OR_ERROR_AND_RETURN(rule, path, "type", type, error, strict);
+            if(strcmp(type, "template") == 0)
                 ap->match.is_template = true;
-            else if(string_strcmp(type, "instance") == 0)
+            else if(strcmp(type, "instance") == 0)
                 ap->match.is_template = false;
             else {
-                buffer_sprintf(error, "type is '%s', but it can only be 'instance' or 'template'", string2str(type));
+                buffer_sprintf(error, "type is '%s', but it can only be 'instance' or 'template'", type);
                 return false;
             }
 
@@ -526,8 +526,11 @@ static size_t dyncfg_health_remove_all_rrdcalc_of_prototype(STRING *alert_name) 
 
     RRDHOST *host;
     dfe_start_reentrant(rrdhost_root_index, host) {
+        if(!host->health.enabled || !rrdhost_flag_check(host, RRDHOST_FLAG_INITIALIZED_HEALTH))
+            continue;
+
         RRDCALC *rc;
-        foreach_rrdcalc_in_rrdhost_read(host, rc) {
+        foreach_rrdcalc_in_rrdhost_reentrant(host, rc) {
             if(rc->config.name != alert_name)
                 continue;
 
@@ -535,6 +538,7 @@ static size_t dyncfg_health_remove_all_rrdcalc_of_prototype(STRING *alert_name) 
             removed++;
         }
         foreach_rrdcalc_in_rrdhost_done(rc);
+        dictionary_garbage_collect(host->rrdcalc_root_index);
     }
     dfe_done(host);
 
@@ -542,7 +546,6 @@ static size_t dyncfg_health_remove_all_rrdcalc_of_prototype(STRING *alert_name) 
 }
 
 static void dyncfg_health_prototype_reapply(RRD_ALERT_PROTOTYPE *ap) {
-    dyncfg_health_remove_all_rrdcalc_of_prototype(ap->config.name);
     health_prototype_apply_to_all_hosts(ap);
 }
 

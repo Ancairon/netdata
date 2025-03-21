@@ -8,6 +8,11 @@
 // coverity[ +tainted_string_sanitize_content : arg-0 ]
 static inline void coverity_remove_taint(char *s __maybe_unused) { }
 
+void rrdhost_system_info_swap(struct rrdhost_system_info *a, struct rrdhost_system_info *b) {
+    if(a && b)
+        SWAP(*a, *b);
+}
+
 // ----------------------------------------------------------------------------
 // RRDHOST - set system info from environment variables
 // system_info fields must be heap allocated or NULL
@@ -646,6 +651,22 @@ void get_daemon_status_fields_from_system_info(DAEMON_STATUS_FILE *ds) {
 
     if(ri->host_os_id_like)
         strncpyz(ds->os_id_like, ri->host_os_id_like, sizeof(ds->os_id_like) - 1);
+
+    if(ri->is_k8s_node) {
+        if (strcmp(ri->is_k8s_node, "true") == 0)
+            ds->kubernetes = true;
+        else
+            ds->kubernetes = false;
+    }
+
+    if(ri->cloud_provider_type && strcmp(ri->cloud_provider_type, "unknown") != 0)
+        strncpyz(ds->cloud_provider_type, ri->cloud_provider_type, sizeof(ds->cloud_provider_type) - 1);
+
+    if(ri->cloud_instance_type && strcmp(ri->cloud_instance_type, "unknown") != 0)
+        strncpyz(ds->cloud_instance_type, ri->cloud_instance_type, sizeof(ds->cloud_instance_type) - 1);
+
+    if(ri->cloud_instance_region && strcmp(ri->cloud_instance_region, "unknown") != 0)
+        strncpyz(ds->cloud_instance_region, ri->cloud_instance_region, sizeof(ds->cloud_instance_region) - 1);
 
     ds->read_system_info = true;
 }

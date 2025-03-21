@@ -84,6 +84,16 @@ static inline uint32_t fnv1a_uhash32(const char *name) {
 #define simple_hash(s) fnv1a_hash32(s)
 #define simple_uhash(s) fnv1a_uhash32(s)
 
+static inline uint64_t fnv1a_hash_bin64(const void *data, size_t len) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    uint64_t hash = 14695981039346656037ULL; // FNV offset basis for 64-bit
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint64_t)bytes[i];
+        hash *= 1099511628211ULL; // FNV prime for 64-bit
+    }
+    return hash;
+}
+
 static uint32_t murmur32(uint32_t k) __attribute__((const));
 static inline uint32_t murmur32(uint32_t k) {
     k ^= k >> 16;
@@ -408,6 +418,35 @@ static inline char *strncpyz(char *dst, const char *src, size_t dst_size_minus_1
     *dst = '\0';
 
     return p;
+}
+
+// append src to dst, but only if there is space for it
+// dst is always null terminated
+static inline size_t strcatz(char *dst, size_t len, size_t size, const char *src) {
+    // If starting offset is out of bounds, do nothing.
+    if (len >= size) {
+        dst[size - 1] = '\0';
+        return len;
+    }
+
+    // Move pointer to the end of the current string.
+    char *dest = dst + len;
+
+    // Reserve one byte for the null terminator.
+    size_t space = size - len - 1;
+    size_t initial_space = space;
+
+    // Append src into dst using pointer operations.
+    while (*src && space > 0) {
+        *dest++ = *src++;
+        space--;
+    }
+
+    // Null-terminate the string.
+    *dest = '\0';
+
+    // Return the new length.
+    return len + (initial_space - space);
 }
 
 static inline void sanitize_json_string(char *dst, const char *src, size_t dst_size) {

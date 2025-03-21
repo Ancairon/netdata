@@ -243,21 +243,14 @@ static void rrdcalc_link_to_rrdset(RRDCALC *rc) {
         rrdcalc_isrepeating(rc)?HEALTH_ENTRY_FLAG_IS_REPEATING:0);
 
     health_log_alert(host, ae);
-    health_alarm_log_add_entry(host, ae, false);
+    health_alarm_log_add_entry(host, ae, true);
     rrdset_flag_set(st, RRDSET_FLAG_HAS_RRDCALC_LINKED);
 }
 
 static void rrdcalc_unlink_from_rrdset(RRDCALC *rc, bool having_ll_wrlock) {
     RRDSET *st = rc->rrdset;
 
-    if(!st) {
-        netdata_log_error(
-            "Requested to unlink RRDCALC '%s.%s' which is not linked to any RRDSET",
-            rrdcalc_chart_name(rc), rrdcalc_name(rc));
-        return;
-    }
-
-    if (!exit_initiated) {
+    if (!exit_initiated_get()) {
         RRDHOST *host = st->rrdhost;
 
         time_t now = now_realtime_sec();
@@ -280,17 +273,14 @@ static void rrdcalc_unlink_from_rrdset(RRDCALC *rc, bool having_ll_wrlock) {
         }
     }
 
-    // unlink it
-
     if(!having_ll_wrlock)
         rw_spinlock_write_lock(&st->alerts.spinlock);
 
-    DOUBLE_LINKED_LIST_REMOVE_ITEM_UNSAFE(st->alerts.base, rc, prev, next);
+    if(rc->prev)
+        DOUBLE_LINKED_LIST_REMOVE_ITEM_UNSAFE(st->alerts.base, rc, prev, next);
 
     if(!having_ll_wrlock)
         rw_spinlock_write_unlock(&st->alerts.spinlock);
-
-    rc->rrdset = NULL;
 }
 
 // ----------------------------------------------------------------------------
@@ -385,12 +375,13 @@ static void rrdcalc_free_internals(RRDCALC *rc) {
     string_freez(rc->summary);
 }
 
+static __thread bool thread_having_ll_wrlock = false;
+
 static void rrdcalc_rrdhost_delete_callback(const DICTIONARY_ITEM *item __maybe_unused, void *rrdcalc, void *rrdhost __maybe_unused) {
     RRDCALC *rc = rrdcalc;
     //RRDHOST *host = rrdhost;
 
-    if(unlikely(rc->rrdset))
-        rrdcalc_unlink_from_rrdset(rc, false);
+    rrdcalc_unlink_from_rrdset(rc, thread_having_ll_wrlock);
 
     // any destruction actions that require other locks
     // have to be placed in rrdcalc_del(), because the object is actually locked for deletion
@@ -414,6 +405,7 @@ void rrdcalc_rrdhost_index_init(RRDHOST *host) {
 }
 
 void rrdcalc_rrdhost_index_destroy(RRDHOST *host) {
+    rrdcalc_delete_all(host);
     dictionary_destroy(host->rrdcalc_root_index);
     host->rrdcalc_root_index = NULL;
 }
@@ -441,12 +433,12 @@ bool rrdcalc_add_from_prototype(RRDHOST *host, RRDSET *st, RRD_ALERT_PROTOTYPE *
 }
 
 void rrdcalc_unlink_and_delete(RRDHOST *host, RRDCALC *rc, bool having_ll_wrlock) {
-    if(rc->rrdset)
-        rrdcalc_unlink_from_rrdset(rc, having_ll_wrlock);
+    rrdcalc_unlink_from_rrdset(rc, having_ll_wrlock);
 
+    thread_having_ll_wrlock = having_ll_wrlock;
     dictionary_del_advanced(host->rrdcalc_root_index, string2str(rc->key), (ssize_t)string_strlen(rc->key));
+    thread_having_ll_wrlock = false;
 }
-
 
 // ----------------------------------------------------------------------------
 // RRDCALC cleanup API functions
@@ -467,7 +459,12 @@ void rrdcalc_unlink_and_delete_all_rrdset_alerts(RRDSET *st) {
 }
 
 void rrdcalc_delete_all(RRDHOST *host) {
-    dictionary_flush(host->rrdcalc_root_index);
+    RRDCALC *rc;
+    foreach_rrdcalc_in_rrdhost_write(host, rc) {
+        rrdcalc_unlink_and_delete(host, rc, false);
+    }
+    foreach_rrdcalc_in_rrdhost_done(rc);
+    dictionary_garbage_collect(host->rrdcalc_root_index);
 }
 
 void rrdcalc_child_disconnected(RRDHOST *host) {

@@ -334,7 +334,8 @@ static inline void pgc_size_histogram_del(PGC *cache, struct pgc_size_histogram 
 // ----------------------------------------------------------------------------
 // evictions control
 
-static ALWAYS_INLINE int64_t pgc_threshold(ssize_t threshold, int64_t wanted, int64_t current, int64_t clean) {
+ALWAYS_INLINE
+static int64_t pgc_threshold(ssize_t threshold, int64_t wanted, int64_t current, int64_t clean) {
     if(current < clean)
         current = clean;
 
@@ -346,6 +347,18 @@ static ALWAYS_INLINE int64_t pgc_threshold(ssize_t threshold, int64_t wanted, in
         ret = current - clean;
 
     return ret;
+}
+
+ALWAYS_INLINE
+static int64_t pgc_wanted_size(const int64_t hot, const int64_t hot_max, const int64_t dirty_max, const int64_t index) {
+    // our promise to users
+    const int64_t max_size1 = MAX(hot_max, hot) * 2;
+
+    // protection against slow flushing
+    const int64_t max_size2 = hot_max + MAX(dirty_max * 2, hot_max * 2 / 3) + index;
+
+    // the final wanted cache size
+    return MIN(max_size1, max_size2);
 }
 
 static ssize_t cache_usage_per1000(PGC *cache, int64_t *size_to_evict) {
@@ -372,20 +385,15 @@ static ssize_t cache_usage_per1000(PGC *cache, int64_t *size_to_evict) {
         const int64_t dirty_max = __atomic_load_n(&cache->dirty.stats->max_size, __ATOMIC_RELAXED);
         const int64_t hot_max = __atomic_load_n(&cache->hot.stats->max_size, __ATOMIC_RELAXED);
 
-        // our promise to users
-        const int64_t max_size1 = MAX(hot_max, hot) * 2;
-
-        // protection against slow flushing
-        const int64_t max_size2 = hot_max + ((dirty_max * 2 < hot_max * 2 / 3) ? hot_max * 2 / 3 : dirty_max * 2) + index;
-
-        // the final wanted cache size
-        wanted_cache_size = MIN(max_size1, max_size2);
-
         if(cache->config.dynamic_target_size_cb) {
+            wanted_cache_size = pgc_wanted_size(hot, hot, dirty, index);
+
             const int64_t wanted_cache_size_cb = cache->config.dynamic_target_size_cb();
             if(wanted_cache_size_cb > wanted_cache_size)
                 wanted_cache_size = wanted_cache_size_cb;
         }
+        else
+            wanted_cache_size = pgc_wanted_size(hot, hot_max, dirty_max, index);
 
         if (wanted_cache_size < hot + dirty + index + cache->config.clean_size)
             wanted_cache_size = hot + dirty + index + cache->config.clean_size;
@@ -1843,7 +1851,9 @@ static bool flush_pages(PGC *cache, size_t max_flushes, Word_t section, bool wai
 
         // call the callback to save them
         // it may take some time, so let's release the lock
-        cache->config.pgc_save_dirty_cb(cache, array, pages, pages_added);
+        if(cache->config.pgc_save_dirty_cb)
+            cache->config.pgc_save_dirty_cb(cache, array, pages, pages_added);
+
         flushes_so_far++;
 
         __atomic_add_fetch(&cache->stats.flushes_completed, pages_added, __ATOMIC_RELAXED);
@@ -2075,6 +2085,10 @@ struct aral_statistics *pgc_aral_stats(void) {
     return &pgc_aral_statistics;
 }
 
+void pgc_flush_dirty_pages(PGC *cache, Word_t section) {
+    flush_pages(cache, 0, section, true, true);
+}
+
 void pgc_flush_all_hot_and_dirty_pages(PGC *cache, Word_t section) {
     all_hot_pages_to_dirty(cache, section);
 
@@ -2082,7 +2096,15 @@ void pgc_flush_all_hot_and_dirty_pages(PGC *cache, Word_t section) {
     flush_pages(cache, 0, section, true, true);
 }
 
-void pgc_destroy(PGC *cache) {
+void pgc_destroy(PGC *cache, bool flush) {
+    if(!cache)
+        return;
+
+    if(!flush) {
+        cache->config.pgc_save_init_cb = NULL;
+        cache->config.pgc_save_dirty_cb = NULL;
+    }
+
     // convert all hot pages to dirty
     all_hot_pages_to_dirty(cache, PGC_SECTION_ALL);
 
@@ -2290,7 +2312,7 @@ bool pgc_flush_pages(PGC *cache) {
 }
 
 void pgc_page_hot_set_end_time_s(PGC *cache __maybe_unused, PGC_PAGE *page, time_t end_time_s, size_t additional_bytes) {
-    internal_fatal(!is_page_hot(page) && !exit_initiated,
+    internal_fatal(!is_page_hot(page) && !exit_initiated_get(),
                    "DBENGINE CACHE: end_time_s update on non-hot page");
 
     internal_fatal(end_time_s < __atomic_load_n(&page->end_time_s, __ATOMIC_RELAXED),
@@ -2446,7 +2468,7 @@ void pgc_open_cache_to_journal_v2(PGC *cache, Word_t section, unsigned datafile_
 
         size_t current_extent_index_id;
         Pvoid_t *PValue = JudyLIns(&JudyL_extents_pos, xio->pos, PJE0);
-        if(!PValue || *PValue == PJERR)
+        if(!PValue || PValue == PJERR)
             fatal("Corrupted JudyL extents pos");
 
         struct jv2_extents_info *ei;
@@ -2470,7 +2492,7 @@ void pgc_open_cache_to_journal_v2(PGC *cache, Word_t section, unsigned datafile_
         // update the metrics JudyL
 
         PValue = JudyLIns(&JudyL_metrics, page->metric_id, PJE0);
-        if(!PValue || *PValue == PJERR)
+        if(!PValue || PValue == PJERR)
             fatal("Corrupted JudyL metrics");
 
         struct jv2_metrics_info *mi;
@@ -2496,7 +2518,7 @@ void pgc_open_cache_to_journal_v2(PGC *cache, Word_t section, unsigned datafile_
         }
 
         PValue = JudyLIns(&mi->JudyL_pages_by_start_time, page->start_time_s, PJE0);
-        if(!PValue || *PValue == PJERR)
+        if(!PValue || PValue == PJERR)
             fatal("Corrupted JudyL metric pages");
 
         if(!*PValue) {
@@ -3060,7 +3082,7 @@ int pgc_unittest(void) {
     pgc_page_hot_set_end_time_s(cache, page3, 2001, 0);
     pgc_page_hot_to_dirty_and_release(cache, page3, false);
 
-    pgc_destroy(cache);
+    pgc_destroy(cache, true);
 
 #ifdef PGC_STRESS_TEST
     unittest_stress_test();

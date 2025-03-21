@@ -94,8 +94,8 @@ func (c *Collector) makeChartsFromMetricMap(mx map[string]int64, metricMap map[s
 			case int:
 
 				// log.Println(metric)
-				
-				c.addSNMPChart(metric)
+
+				// c.addSNMPChart(metric)
 				mx[metric.name] = int64(s)
 
 			}

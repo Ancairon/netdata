@@ -169,6 +169,7 @@ mark_as_advanced(ENABLE_DASHBOARD)
 
 # Data collection plugins
 option(ENABLE_PLUGIN_GO "Enable metric collectors written in Go" ${DEFAULT_FEATURE_STATE})
+option(ENABLE_PLUGIN_OTEL "Enable metrics collection via OpenTelemetry collector" False)
 option(ENABLE_PLUGIN_PYTHON "Enable metric collectors written in Python" ${DEFAULT_FEATURE_STATE})
 
 cmake_dependent_option(ENABLE_PLUGIN_APPS "Enable per-process resource usage monitoring" ${DEFAULT_FEATURE_STATE} "OS_LINUX OR OS_FREEBSD OR OS_MACOS OR OS_WINDOWS" False)
@@ -303,7 +304,7 @@ if(ENABLE_JEMALLOC)
     endif()
 endif()
 
-if(ENABLE_PLUGIN_GO)
+if(ENABLE_PLUGIN_GO OR ENABLE_PLUGIN_OTEL)
     include(NetdataGoTools)
 
     find_min_go_version("${CMAKE_SOURCE_DIR}/src/go")
@@ -486,12 +487,13 @@ check_function_exists(sysinfo HAVE_SYSINFO)
 
 check_function_exists(timegm HAVE_TIMEGM)
 
-# Add -rdynamic when backtrace is available but libunwind is not
-if(HAVE_BACKTRACE AND NOT ENABLE_LIBUNWIND AND NOT STATIC_BUILD)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        add_link_options(-rdynamic)
-        message(STATUS "Adding -rdynamic to link options for better backtrace support")
-    endif()
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    # -fno-omit-frame-pointer = add frame pointers to all functions
+    # -funwind-tables = generate unwind tables for all functions
+    # -fasynchronous-unwind-tables = the unwind table generated is precise at instruction boundary, instead of function boundary
+    add_compile_options(-fno-omit-frame-pointer -funwind-tables -fasynchronous-unwind-tables)
+    add_link_options(-rdynamic)
+    message(STATUS "Added compiler and linker flags for better stack trace support")
 endif()
 
 #
@@ -1068,6 +1070,10 @@ set(LIBNETDATA_FILES
         src/libnetdata/os/mmap_limit.h
         src/libnetdata/signals/signals.c
         src/libnetdata/signals/signals.h
+        src/libnetdata/os/machine_id.c
+        src/libnetdata/os/machine_id.h
+        src/libnetdata/signals/signal-code.c
+        src/libnetdata/signals/signal-code.h
 )
 
 list(APPEND LIBNETDATA_FILES ${INICFG_FILES})
@@ -1327,7 +1333,6 @@ set(API_PLUGIN_FILES
         src/web/api/v2/api_v2_functions.c
         src/web/api/v2/api_v2_alerts.c
         src/web/api/v2/api_v2_alert_transitions.c
-        src/web/api/v2/api_v2_ilove/ilove.c
         src/web/api/v2/api_v2_bearer.c
         src/web/api/v2/api_v2_calls.h
         src/web/api/v2/api_v2_data.c
@@ -1498,6 +1503,11 @@ set(INTERNAL_COLLECTORS_FILES
         src/collectors/common-contexts/mem-pgfaults.h
         src/collectors/common-contexts/mem-available.h
 )
+
+set(INTERCOMMUNICATION_COLLECTORS_FILES
+        src/collectors/collectors-ipc/ebpf-ipc.c
+        src/collectors/collectors-ipc/ebpf-ipc.h
+        )
 
 set(PLUGINSD_PLUGIN_FILES
         src/plugins.d/plugins_d.c
@@ -1859,6 +1869,7 @@ set(WINDOWS_PLUGIN_FILES
         src/collectors/windows.plugin/GetSystemRAM.c
         src/collectors/windows.plugin/GetSystemCPU.c
         src/collectors/windows.plugin/perflib-adcs.c
+        src/collectors/windows.plugin/perflib-adfs.c
         src/collectors/windows.plugin/perflib-rrd.c
         src/collectors/windows.plugin/perflib-rrd.h
         src/collectors/windows.plugin/perflib-ad.c
@@ -2261,16 +2272,24 @@ if(ENABLE_LIBUNWIND)
   if(TARGET PkgConfig::LIBUNWIND)
     set(HAVE_LIBUNWIND On)
 
+    if(STATIC_BUILD)
+      set(unwind_prefix /libunwind-static/lib/libunwind-)
+      set(suffix ${CMAKE_STATIC_LIBRARY_SUFFIX})
+    else()
+      set(unwind_prefix -lunwind-)
+      set(suffix "")
+    endif()
+
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(amd64)")
-      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-x86_64)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND ${unwind_prefix}x86_64${suffix})
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^i?.86")
-      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-x86)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND ${unwind_prefix}x86${suffix})
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(arm64)|(aarch64)")
-      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-aarch64)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND ${unwind_prefix}aarch64${suffix})
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-arm)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND ${unwind_prefix}arm${suffix})
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "p(ower)?pc64")
-      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND -lunwind-ppc64)
+      target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND ${unwind_prefix}ppc64${suffix})
     else()
       message(WARNING "Unknown architecture ${CMAKE_SYSTEM_PROCESSOR} for libunwind. Stack traces may not work.")
       target_link_libraries(libnetdata PUBLIC PkgConfig::LIBUNWIND)
@@ -2721,6 +2740,8 @@ if(ENABLE_PLUGIN_EBPF)
             src/collectors/ebpf.plugin/ebpf_shm.h
             src/collectors/ebpf.plugin/ebpf_socket.c
             src/collectors/ebpf.plugin/ebpf_socket.h
+            src/collectors/ebpf.plugin/ebpf_socket_ipc.c
+            src/collectors/ebpf.plugin/ebpf_socket_ipc.h
             src/collectors/ebpf.plugin/ebpf_softirq.c
             src/collectors/ebpf.plugin/ebpf_softirq.h
             src/collectors/ebpf.plugin/ebpf_sync.c
@@ -2741,7 +2762,7 @@ if(ENABLE_PLUGIN_EBPF)
             src/collectors/ebpf.plugin/libbpf_api/ebpf.h
     )
 
-    add_executable(ebpf.plugin ${EBPF_PLUGIN_FILES})
+    add_executable(ebpf.plugin ${EBPF_PLUGIN_FILES} ${INTERCOMMUNICATION_COLLECTORS_FILES})
     target_link_libraries(ebpf.plugin libnetdata)
 
     netdata_add_libbpf_to_target(ebpf.plugin)
@@ -3033,6 +3054,18 @@ if(ENABLE_PLUGIN_GO)
     install(PROGRAMS ${CMAKE_BINARY_DIR}/go.d.plugin
             COMPONENT plugin-go
             DESTINATION usr/libexec/netdata/plugins.d)
+endif()
+
+#
+# Handle OTel Collector plugin
+#
+
+if(ENABLE_PLUGIN_OTEL)
+  include(${CMAKE_SOURCE_DIR}/src/go/otel-collector/CMakeLists.txt)
+
+  install(PROGRAMS ${CMAKE_BINARY_DIR}/otel-collector/otelcol.plugin
+          COMPONENT plugin-otelcol
+          DESTINATION usr/libexec/netdata/plugins.d)
 endif()
 
 #
@@ -3616,6 +3649,18 @@ if(ENABLE_PLUGIN_GO)
             COMPONENT plugin-go
             DESTINATION usr/lib/netdata/conf.d/go.d/sd)
 
+    install(DIRECTORY
+            COMPONENT plugin-go
+            DESTINATION usr/lib/netdata/conf.d/go.d/snmp.profiles)
+    install(DIRECTORY
+            COMPONENT plugin-go
+            DESTINATION usr/lib/netdata/conf.d/go.d/snmp.profiles/default)
+
+    file(GLOB GO_SD_CONF_FILES src/go/plugin/go.d/config/go.d/snmp.profiles/default/*.yaml)
+    install(FILES ${GO_SD_CONF_FILES}
+            COMPONENT plugin-go
+            DESTINATION usr/lib/netdata/conf.d/go.d/snmp.profiles/default)
+
     if(BUILD_FOR_PACKAGING)
         install(FILES
                 ${PKG_FILES_PATH}/copyright
@@ -3633,7 +3678,6 @@ if(ENABLE_DASHBOARD)
   bundle_dashboard()
 
   install(FILES
-          src/web/gui/ilove.html
           COMPONENT dashboard
           DESTINATION ${WEB_DEST})
 

@@ -20,8 +20,8 @@ KICKSTART_SOURCE="$(
     echo "$(pwd -P)/${self##*/}"
 )"
 DEFAULT_PLUGIN_PACKAGES=""
-REPOCONFIG_DEB_VERSION="4-1"
-REPOCONFIG_RPM_VERSION="4-1"
+REPOCONFIG_DEB_VERSION="5-1"
+REPOCONFIG_RPM_VERSION="5-1"
 START_TIME="$(date +%s)"
 STATIC_INSTALL_ARCHES="x86_64 armv7l armv6l aarch64 ppc64le"
 
@@ -811,6 +811,11 @@ get_system_info() {
           DISTRO_COMPAT_NAME="${DISTRO}"
       else
           case "${DISTRO}" in
+          raspbian)
+              if [ "$SYSARCH" = "armv7l" ] || [ "$SYSARCH" = "aarch64" ]; then
+                DISTRO_COMPAT_NAME="debian"
+              fi
+              ;;
           opensuse-leap)
               DISTRO_COMPAT_NAME="opensuse"
               ;;

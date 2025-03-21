@@ -1218,9 +1218,6 @@ void datafile_delete(struct rrdengine_instance *ctx, struct rrdengine_datafile *
 
     bool datafile_got_for_deletion = datafile_acquire_for_deletion(datafile, false);
 
-    if (update_retention)
-        update_metrics_first_time_s(ctx, datafile, datafile->next, worker);
-
     while (!datafile_got_for_deletion) {
         if(worker)
             worker_is_busy(UV_EVENT_DBENGINE_DATAFILE_DELETE_WAIT);
@@ -1238,6 +1235,9 @@ void datafile_delete(struct rrdengine_instance *ctx, struct rrdengine_datafile *
             sleep_usec(1 * USEC_PER_SEC);
         }
     }
+
+    if (update_retention)
+        update_metrics_first_time_s(ctx, datafile, datafile->next, worker);
 
     __atomic_add_fetch(&rrdeng_cache_efficiency_stats.datafile_deletion_started, 1, __ATOMIC_RELAXED);
     netdata_log_info("DBENGINE: deleting data file '%s/"
@@ -1324,6 +1324,21 @@ static void *flush_all_hot_and_dirty_pages_of_section_tp_worker(struct rrdengine
 
     return data;
 }
+
+static void after_flush_dirty_pages_of_section(struct rrdengine_instance *ctx __maybe_unused, void *data __maybe_unused, struct completion *completion __maybe_unused, uv_work_t* req __maybe_unused, int status __maybe_unused) {
+    ;
+}
+
+static void *flush_dirty_pages_of_section_tp_worker(struct rrdengine_instance *ctx __maybe_unused, void *data __maybe_unused, struct completion *completion __maybe_unused, uv_work_t *uv_work_req __maybe_unused) {
+    worker_is_busy(UV_EVENT_DBENGINE_FLUSH_DIRTY);
+    pgc_flush_dirty_pages(main_cache, (Word_t)ctx);
+
+    for(size_t i = 0; i < pgc_max_flushers() ; i++)
+        rrdeng_enq_cmd(NULL, RRDENG_OPCODE_FLUSH_MAIN, NULL, NULL, STORAGE_PRIORITY_INTERNAL_DBENGINE, NULL, NULL);
+
+    return data;
+}
+
 
 static void after_populate_mrg(struct rrdengine_instance *ctx __maybe_unused, void *data __maybe_unused, struct completion *completion __maybe_unused, uv_work_t* req __maybe_unused, int status __maybe_unused) {
     ;
@@ -1873,6 +1888,7 @@ void dbengine_event_loop(void* arg) {
     worker_register_job_name(RRDENG_OPCODE_FLUSH_MAIN,                               "flush init");
     worker_register_job_name(RRDENG_OPCODE_EVICT_MAIN,                               "evict init");
     worker_register_job_name(RRDENG_OPCODE_CTX_SHUTDOWN,                             "ctx shutdown");
+    worker_register_job_name(RRDENG_OPCODE_CTX_FLUSH_DIRTY,                          "ctx flush dirty");
     worker_register_job_name(RRDENG_OPCODE_CTX_QUIESCE,                              "ctx quiesce");
     worker_register_job_name(RRDENG_OPCODE_SHUTDOWN_EVLOOP,                          "dbengine shutdown");
 
@@ -1886,6 +1902,7 @@ void dbengine_event_loop(void* arg) {
     worker_register_job_name(RRDENG_OPCODE_MAX + RRDENG_OPCODE_FLUSH_MAIN,           "flush init cb");
     worker_register_job_name(RRDENG_OPCODE_MAX + RRDENG_OPCODE_EVICT_MAIN,           "evict init cb");
     worker_register_job_name(RRDENG_OPCODE_MAX + RRDENG_OPCODE_CTX_SHUTDOWN,         "ctx shutdown cb");
+    worker_register_job_name(RRDENG_OPCODE_MAX + RRDENG_OPCODE_CTX_FLUSH_DIRTY,      "ctx flush dirty cb");
     worker_register_job_name(RRDENG_OPCODE_MAX + RRDENG_OPCODE_CTX_QUIESCE,          "ctx quiesce cb");
 
     // special jobs
@@ -2010,6 +2027,14 @@ void dbengine_event_loop(void* arg) {
                     struct rrdengine_instance *ctx = cmd.ctx;
                     struct completion *completion = cmd.completion;
                     work_dispatch(ctx, NULL, completion, opcode, populate_mrg_tp_worker, after_populate_mrg);
+                    break;
+                }
+
+                case RRDENG_OPCODE_CTX_FLUSH_DIRTY: {
+                    struct rrdengine_instance *ctx = cmd.ctx;
+                    work_dispatch(ctx, NULL, NULL, opcode,
+                                  flush_dirty_pages_of_section_tp_worker,
+                                  after_flush_dirty_pages_of_section);
                     break;
                 }
 

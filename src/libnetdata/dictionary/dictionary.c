@@ -330,12 +330,14 @@ static void dictionary_queue_for_destruction(DICTIONARY *dict) {
     netdata_mutex_unlock(&dictionaries_waiting_to_be_destroyed_mutex);
 }
 
-void cleanup_destroyed_dictionaries(void) {
+size_t cleanup_destroyed_dictionaries(void) {
     netdata_mutex_lock(&dictionaries_waiting_to_be_destroyed_mutex);
     if (!dictionaries_waiting_to_be_destroyed) {
         netdata_mutex_unlock(&dictionaries_waiting_to_be_destroyed_mutex);
-        return;
+        return 0;
     }
+
+    size_t remaining = 0;
 
     DICTIONARY *dict, *last = NULL, *next = NULL;
     for(dict = dictionaries_waiting_to_be_destroyed; dict ; dict = next) {
@@ -353,7 +355,7 @@ void cleanup_destroyed_dictionaries(void) {
 
             internal_error(
                 true,
-                "DICTIONARY: freed dictionary with delayed destruction, created from %s() %zu@%s pid %d.",
+                "DICTIONARY DELAYED: freed dict created from %s() %zu@%s pid %d.",
                 function, line, file, pid);
 
             if(last) last->next = next;
@@ -363,15 +365,19 @@ void cleanup_destroyed_dictionaries(void) {
 
             internal_error(
                     true,
-                    "DICTIONARY: cannot free dictionary with delayed destruction, created from %s() %zu@%s pid %d.",
+                    "DICTIONARY DELAYED %zu: %zu referenced in dict created from %s() %zu@%s pid %d.",
+                    remaining + 1, dictionary_referenced_items(dict),
                     function, line, file, pid);
 
             DICTIONARY_STATS_DICT_DESTROY_QUEUED_PLUS1(dict);
             last = dict;
+            remaining++;
         }
     }
 
     netdata_mutex_unlock(&dictionaries_waiting_to_be_destroyed_mutex);
+
+    return remaining;
 }
 
 // ----------------------------------------------------------------------------
@@ -592,6 +598,8 @@ void dictionary_flush(DICTIONARY *dict) {
     ll_recursive_unlock(dict, DICTIONARY_LOCK_WRITE);
 
     DICTIONARY_STATS_DICT_FLUSHES_PLUS1(dict);
+
+    dictionary_garbage_collect(dict);
 }
 
 size_t dictionary_destroy(DICTIONARY *dict) {
@@ -601,7 +609,6 @@ size_t dictionary_destroy(DICTIONARY *dict) {
 
     ll_recursive_lock(dict, DICTIONARY_LOCK_WRITE);
 
-    dict_flag_set(dict, DICT_FLAG_DESTROYED);
     DICTIONARY_STATS_DICT_DESTRUCTIONS_PLUS1(dict);
 
     size_t referenced_items = dictionary_referenced_items(dict);
