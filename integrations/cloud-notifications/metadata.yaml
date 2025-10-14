@@ -6,6 +6,7 @@
     link: "https://netdata.cloud"
     categories:
       - notify.cloud
+      - auth
     icon_filename: "netdata.png"
   keywords:
     - mobile-app
