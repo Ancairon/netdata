@@ -1,5 +1,7 @@
 # Creating Alerts with Netdata Alerts Configuration Manager
 
+TESTING
+
 The **Netdata Alerts Configuration Manager** lets you create and fine-tune alerts directly from the Netdata Cloud Dashboard.
 
 :::info
